@@ -8,8 +8,12 @@ const stageLine = el("stageLine");
 const dealerLine = el("dealerLine");
 const turnLine = el("turnLine");
 const scoreLine = el("scoreLine");
-const matchLine = el("matchLine");
 const cribLine = el("cribLine");
+
+const matchP1Name = el("matchP1Name");
+const matchP2Name = el("matchP2Name");
+const matchP1Pips = el("matchP1Pips");
+const matchP2Pips = el("matchP2Pips");
 
 const handTitle = el("handTitle");
 const handHelp = el("handHelp");
@@ -57,7 +61,6 @@ let state = null;
 let selectedForDiscard = new Set();
 
 // ---------- Cards ----------
-
 function suitClass(suit) {
   return (suit === "♥" || suit === "♦") ? "red" : "black";
 }
@@ -93,11 +96,32 @@ function cardValue(rank) {
   if (["K","Q","J"].includes(rank)) return 10;
   return parseInt(rank, 10);
 }
-
 function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
 
-// ---------- SVG Board (Option B) ----------
+// ---------- Match pips ----------
+function renderPips(container, wins, maxShown = 10) {
+  container.innerHTML = "";
+  const w = Math.max(0, wins || 0);
+  const shown = Math.min(w, maxShown);
 
+  for (let i = 0; i < maxShown; i++) {
+    const pip = document.createElement("span");
+    pip.className = "pip" + (i < shown ? " filled" : "");
+    container.appendChild(pip);
+  }
+
+  // If wins exceed maxShown, add a little text indicator
+  if (w > maxShown) {
+    const extra = document.createElement("span");
+    extra.style.marginLeft = "8px";
+    extra.style.opacity = "0.8";
+    extra.style.fontWeight = "900";
+    extra.textContent = `+${w - maxShown}`;
+    container.appendChild(extra);
+  }
+}
+
+// ---------- SVG Board (bigger / more readable) ----------
 let boardInitialized = false;
 let pegP1 = null;
 let pegP2 = null;
@@ -118,45 +142,41 @@ function initBoardSvg() {
 
   boardSvg.innerHTML = "";
 
-  // Background plate
   const plate = svgEl("rect");
   plate.setAttribute("x", "20");
   plate.setAttribute("y", "20");
   plate.setAttribute("width", "920");
-  plate.setAttribute("height", "180");
+  plate.setAttribute("height", "240");
   plate.setAttribute("rx", "28");
   plate.setAttribute("class", "boardPlate");
   boardSvg.appendChild(plate);
 
-  // Title engraving
   const title = svgEl("text");
   title.setAttribute("x", "480");
-  title.setAttribute("y", "55");
+  title.setAttribute("y", "62");
   title.setAttribute("text-anchor", "middle");
   title.setAttribute("class", "boardEngrave");
-  title.textContent = "PIRATE CRIBBAGE • 0 → 121";
+  title.textContent = "⚓ PIRATE CRIBBAGE • 0 → 121";
   boardSvg.appendChild(title);
 
-  // Tracks
   const track1 = svgEl("rect");
   track1.setAttribute("x", "80");
-  track1.setAttribute("y", "80");
+  track1.setAttribute("y", "90");
   track1.setAttribute("width", "800");
-  track1.setAttribute("height", "40");
-  track1.setAttribute("rx", "20");
+  track1.setAttribute("height", "52");
+  track1.setAttribute("rx", "26");
   track1.setAttribute("class", "track track1");
   boardSvg.appendChild(track1);
 
   const track2 = svgEl("rect");
   track2.setAttribute("x", "80");
-  track2.setAttribute("y", "140");
+  track2.setAttribute("y", "170");
   track2.setAttribute("width", "800");
-  track2.setAttribute("height", "40");
-  track2.setAttribute("rx", "20");
+  track2.setAttribute("height", "52");
+  track2.setAttribute("rx", "26");
   track2.setAttribute("class", "track track2");
   boardSvg.appendChild(track2);
 
-  // Tick marks
   const ticksGroup = svgEl("g");
   ticksGroup.setAttribute("class", "ticks");
   boardSvg.appendChild(ticksGroup);
@@ -168,15 +188,15 @@ function initBoardSvg() {
     const tick = svgEl("line");
     tick.setAttribute("x1", String(x));
     tick.setAttribute("x2", String(x));
-    tick.setAttribute("y1", "75");
-    tick.setAttribute("y2", isMajor ? "185" : "175");
+    tick.setAttribute("y1", "84");
+    tick.setAttribute("y2", isMajor ? "240" : "232");
     tick.setAttribute("class", isMajor ? "tick major" : "tick minor");
     ticksGroup.appendChild(tick);
 
     if (isMajor && (i % 10 === 0 || i === 121)) {
       const lbl = svgEl("text");
       lbl.setAttribute("x", String(x));
-      lbl.setAttribute("y", "200");
+      lbl.setAttribute("y", "262");
       lbl.setAttribute("text-anchor", "middle");
       lbl.setAttribute("class", "tickLabel");
       lbl.textContent = String(i);
@@ -184,20 +204,18 @@ function initBoardSvg() {
     }
   }
 
-  // Pegs
   pegP1 = svgEl("circle");
-  pegP1.setAttribute("r", "12");
-  pegP1.setAttribute("cy", "100");
+  pegP1.setAttribute("r", "14");
+  pegP1.setAttribute("cy", "116");
   pegP1.setAttribute("class", "peg p1");
   boardSvg.appendChild(pegP1);
 
   pegP2 = svgEl("circle");
-  pegP2.setAttribute("r", "12");
-  pegP2.setAttribute("cy", "160");
+  pegP2.setAttribute("r", "14");
+  pegP2.setAttribute("cy", "196");
   pegP2.setAttribute("class", "peg p2");
   boardSvg.appendChild(pegP2);
 
-  // Start positions
   pegP1.setAttribute("cx", String(scoreToX(0)));
   pegP2.setAttribute("cx", String(scoreToX(0)));
 }
@@ -217,7 +235,6 @@ function renderBoard() {
 }
 
 // ---------- Pegging HUD ----------
-
 function renderPileAndHud() {
   if (!state) return;
 
@@ -239,7 +256,7 @@ function renderPileAndHud() {
   const opp = state.oppHandCount;
 
   peggingStatus.textContent =
-    `${myTurn ? "Your turn" : "Opponent's turn"} • You have ${mine} card(s) • Opponent has ${opp} card(s).`;
+    `${myTurn ? "Your turn" : "Opponent's turn"} • You: ${mine} card(s) • Opponent: ${opp} card(s).`;
 
   const ev = state.lastPegEvent;
   if (ev && ev.pts && ev.pts > 0) {
@@ -252,8 +269,7 @@ function renderPileAndHud() {
   }
 }
 
-// ---------- Show scoring panel ----------
-
+// ---------- Show panel ----------
 function renderBreakdown(listEl, breakdown) {
   listEl.innerHTML = "";
   if (!breakdown || !breakdown.items || breakdown.items.length === 0) {
@@ -314,8 +330,7 @@ function renderShow() {
   cTotal.textContent = `Total: ${cr?.breakdown?.total ?? 0}`;
 }
 
-// ---------- Game Over Modal ----------
-
+// ---------- Game Over modal ----------
 function renderGameOver() {
   if (!state) return;
 
@@ -329,14 +344,14 @@ function renderGameOver() {
   const winnerName = (w === "PLAYER1" ? (state.players.PLAYER1 || "P1") : (state.players.PLAYER2 || "P2"));
 
   winnerLine.textContent = `${winnerName} wins! (${state.gameOver.reason})`;
-  finalLine.textContent = `Final: P1 ${state.gameOver.scores.PLAYER1} • P2 ${state.gameOver.scores.PLAYER2}  |  Match: P1 ${state.gameOver.matchWins.PLAYER1} – P2 ${state.gameOver.matchWins.PLAYER2}`;
+  finalLine.textContent =
+    `Final: P1 ${state.gameOver.scores.PLAYER1} • P2 ${state.gameOver.scores.PLAYER2} | Match: P1 ${state.gameOver.matchWins.PLAYER1} – P2 ${state.gameOver.matchWins.PLAYER2}`;
 
   gameOverModal.classList.remove("hidden");
   gameOverModal.setAttribute("aria-hidden", "false");
 }
 
 // ---------- Main render ----------
-
 function render() {
   if (!state) return;
 
@@ -345,19 +360,23 @@ function render() {
 
   const p1 = state.players.PLAYER1 ? state.players.PLAYER1 : "—";
   const p2 = state.players.PLAYER2 ? state.players.PLAYER2 : "—";
-  playersLine.textContent = `Players: P1=${p1} | P2=${p2}`;
+  playersLine.textContent = `Crew: P1=${p1} | P2=${p2}`;
 
   stageLine.textContent = `Stage: ${state.stage}`;
   dealerLine.textContent = `Dealer: ${state.dealer}`;
   turnLine.textContent = `Turn: ${state.turn ?? "—"}`;
 
   const win = state.winScore ?? 121;
-  scoreLine.textContent = `Game: P1=${state.scores.PLAYER1}/${win} | P2=${state.scores.PLAYER2}/${win}`;
+  scoreLine.textContent = `P1 ${state.scores.PLAYER1}/${win}  •  P2 ${state.scores.PLAYER2}/${win}`;
 
+  // Match pips + names
   const mw = state.matchWins || { PLAYER1: 0, PLAYER2: 0 };
-  matchLine.textContent = `Match: P1 ${mw.PLAYER1} – P2 ${mw.PLAYER2}`;
+  matchP1Name.textContent = state.players.PLAYER1 ? `P1 (${state.players.PLAYER1})` : "P1";
+  matchP2Name.textContent = state.players.PLAYER2 ? `P2 (${state.players.PLAYER2})` : "P2";
+  renderPips(matchP1Pips, mw.PLAYER1, 10);
+  renderPips(matchP2Pips, mw.PLAYER2, 10);
 
-  cribLine.textContent = `Crib cards: ${state.cribCount} | Discards: P1=${state.discardsCount.PLAYER1}/2 P2=${state.discardsCount.PLAYER2}/2`;
+  cribLine.textContent = `Crib: ${state.cribCount} | Discards: P1=${state.discardsCount.PLAYER1}/2 P2=${state.discardsCount.PLAYER2}/2`;
   logArea.textContent = (state.log || []).join("\n");
 
   renderBoard();
@@ -369,19 +388,19 @@ function render() {
   discardBtn.style.display = "none";
   goBtn.style.display = "none";
   nextHandBtn.style.display = "none";
+  goBtn.classList.remove("goPulse");
   discardBtn.disabled = true;
   handArea.innerHTML = "";
 
-  // gameover: no actions except modal buttons
   if (state.stage === "gameover") {
     handTitle.textContent = "Game Over";
-    handHelp.textContent = "Start the next game (match score will carry), or reset the whole match.";
+    handHelp.textContent = "Start the next game (match carries) or reset the whole match.";
     showPanel.classList.add("hidden");
     return;
   }
 
   if (state.stage === "lobby") {
-    handTitle.textContent = "Waiting for players…";
+    handTitle.textContent = "Waiting for crew…";
     handHelp.textContent = `Open another browser/incognito and join table "${state.tableId}".`;
     showPanel.classList.add("hidden");
     return;
@@ -390,7 +409,7 @@ function render() {
   if (state.stage === "discard") {
     showPanel.classList.add("hidden");
     handTitle.textContent = "Your Hand";
-    handHelp.textContent = "Click 2 cards to discard to the crib.";
+    handHelp.textContent = "Choose 2 cards to toss into the crib.";
 
     const myHand = state.myHand || [];
     myHand.forEach(card => {
@@ -424,7 +443,7 @@ function render() {
   if (state.stage === "pegging") {
     showPanel.classList.add("hidden");
     handTitle.textContent = "Pegging";
-    handHelp.textContent = "Play a card without exceeding 31. If you can’t play, press GO.";
+    handHelp.textContent = "Play a card without exceeding 31. If you can’t play, hit GO.";
 
     const myTurn = state.turn === state.me;
     const myHand = state.myHand || [];
@@ -442,6 +461,7 @@ function render() {
     const canPlay = myHand.some(c => count + cardValue(c.rank) <= 31);
     if (myTurn && myHand.length > 0 && !canPlay) {
       goBtn.style.display = "inline-block";
+      goBtn.classList.add("goPulse");
       goBtn.onclick = () => socket.emit("go");
     }
     return;
@@ -460,11 +480,9 @@ function render() {
   }
 }
 
-// ---------- Wire up modal buttons ----------
 newGameBtn.onclick = () => socket.emit("new_game");
 newMatchBtn.onclick = () => socket.emit("new_match");
 
-// ---------- Socket ----------
 socket.on("connect", () => {
   socket.emit("join_table", { tableId, name });
 });
