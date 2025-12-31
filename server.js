@@ -13,6 +13,10 @@ const io = new Server(server);
 
 io.on("connection", (socket) => {
   socket.emit("hello", { msg: "🏴‍☠️ Ahoy! Pirate Cribbage server is alive." });
+
+  socket.on("ping", () => {
+    socket.emit("hello", { msg: "🏴‍☠️ Ahoy! Ping received loud and clear." });
+  });
 });
 
 const PORT = process.env.PORT || 3000;
