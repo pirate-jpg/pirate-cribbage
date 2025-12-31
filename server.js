@@ -1,4 +1,4 @@
-// Pirate Cribbage - 2-player: discard -> pegging -> show (with scoring breakdown)
+// Pirate Cribbage - 2-player: discard -> pegging -> show (with scoring breakdown + pegging runs)
 
 const path = require("path");
 const express = require("express");
@@ -82,14 +82,14 @@ function ensureTable(tableId) {
 
       peg: {
         count: 0,
-        pile: [],
+        pile: [], // card objects since last reset
         lastPlayer: null,
         go: { PLAYER1: false, PLAYER2: false }
       },
 
       scores: { PLAYER1: 0, PLAYER2: 0 },
 
-      // NEW: show scoring breakdown cached after pegging ends
+      // show scoring breakdown cached after pegging ends
       show: null, // { nonDealer, dealer, cut, handBreakdown: {...}, cribBreakdown: {...} }
 
       log: []
@@ -105,7 +105,6 @@ function pushLog(t, msg) {
 
 function publicStateFor(t, me) {
   const handForUI = (t.stage === "pegging") ? (t.pegHands[me] || []) : (t.hands[me] || []);
-
   return {
     tableId: t.id,
     stage: t.stage,
@@ -131,7 +130,7 @@ function publicStateFor(t, me) {
     me,
     myHand: handForUI,
     log: t.log,
-    show: t.show // <- NEW: breakdown data for UI when stage === "show"
+    show: t.show
   };
 }
 
@@ -160,9 +159,9 @@ function startHand(t) {
   t.originalHands.PLAYER1 = [...p1];
   t.originalHands.PLAYER2 = [...p2];
 
+  // during discard, hands/pegHands mirror (6 cards)
   t.hands.PLAYER1 = [...p1];
   t.hands.PLAYER2 = [...p2];
-
   t.pegHands.PLAYER1 = [...p1];
   t.pegHands.PLAYER2 = [...p2];
 
@@ -174,11 +173,12 @@ function enterPegging(t) {
   t.cut = t.deck.splice(0, 1)[0];
   pushLog(t, `Cut: ${t.cut.rank}${t.cut.suit}`);
 
-  // pegHands = copy of show hands
+  // pegHands = copy of show hands (now 4 cards each)
   t.pegHands.PLAYER1 = [...t.hands.PLAYER1];
   t.pegHands.PLAYER2 = [...t.hands.PLAYER2];
 
-  t.turn = otherPlayer(t.dealer); // non-dealer starts pegging
+  // non-dealer starts pegging
+  t.turn = otherPlayer(t.dealer);
   t.peg = { count: 0, pile: [], lastPlayer: null, go: { PLAYER1:false, PLAYER2:false } };
 
   pushLog(t, `Pegging starts. ${t.turn} to play.`);
@@ -189,25 +189,55 @@ function canPlayAny(hand, count) {
 }
 
 /** -------------------------
- *  Pegging scoring (minimal)
+ *  Pegging scoring (NOW includes RUNS)
  *  ------------------------- */
+
+// Determine pegging run length (longest suffix >=3) from the current pile.
+// Rule: take the last N cards since reset; if their ranks are all unique and consecutive (any order), score N.
+function peggingRunPoints(pile) {
+  const maxLookback = Math.min(pile.length, 7); // 7 is plenty; pile can't exceed 8 in practice before resets
+  for (let len = maxLookback; len >= 3; len--) {
+    const slice = pile.slice(pile.length - len);
+    const vals = slice.map(c => rankNum(c.rank));
+    const set = new Set(vals);
+    if (set.size !== len) continue; // duplicates => can't be a run of this length
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    if (max - min !== len - 1) continue; // must be consecutive
+    // valid run
+    return len; // points equals run length
+  }
+  return 0;
+}
 
 function pegPointsAfterPlay(t, player, playedCard) {
   let pts = 0;
+  const reasons = [];
 
-  if (t.peg.count === 15) pts += 2;
-  if (t.peg.count === 31) pts += 2;
+  // 15 / 31
+  if (t.peg.count === 15) { pts += 2; reasons.push("15 for 2"); }
+  if (t.peg.count === 31) { pts += 2; reasons.push("31 for 2"); }
 
+  // pairs based on most recent consecutive same ranks
   let same = 1;
   for (let i = t.peg.pile.length - 2; i >= 0; i--) {
     if (t.peg.pile[i].rank === playedCard.rank) same++;
     else break;
   }
-  if (same === 2) pts += 2;
-  else if (same === 3) pts += 6;
-  else if (same === 4) pts += 12;
+  if (same === 2) { pts += 2; reasons.push("pair for 2"); }
+  else if (same === 3) { pts += 6; reasons.push("three of a kind for 6"); }
+  else if (same === 4) { pts += 12; reasons.push("four of a kind for 12"); }
 
-  if (pts) pushLog(t, `${player} scores ${pts} pegging point(s).`);
+  // RUNS (pegging): longest run in the most recent cards since reset that includes the last card (suffix)
+  const runPts = peggingRunPoints(t.peg.pile);
+  if (runPts >= 3) {
+    pts += runPts;
+    reasons.push(`run of ${runPts} for ${runPts}`);
+  }
+
+  if (pts) {
+    pushLog(t, `${player} scores ${pts} pegging point(s) (${reasons.join(", ")}).`);
+  }
   return pts;
 }
 
@@ -250,20 +280,18 @@ function score15sDetailed(cards) {
 }
 
 function scorePairsDetailed(cards) {
-  // count pairs by rank
   const byRank = {};
   for (const c of cards) byRank[c.rank] = (byRank[c.rank] || 0) + 1;
 
-  let pairCount = 0; // number of distinct pair-combinations
+  let pairCount = 0;
   let pts = 0;
 
   for (const r of Object.keys(byRank)) {
     const n = byRank[r];
     if (n >= 2) {
-      // number of pair combinations = C(n,2)
-      const combos = (n * (n - 1)) / 2;
-      pairCount += combos;
-      pts += combos * 2;
+      const comb = (n * (n - 1)) / 2;
+      pairCount += comb;
+      pts += comb * 2;
     }
   }
   return { pairs: pairCount, pts };
@@ -325,9 +353,7 @@ function scoreHandBreakdown(hand4, cut, isCrib=false) {
 
   const ru = runsMultiplicity(all);
   if (ru.len >= 3) {
-    const label = ru.mult === 1
-      ? `run of ${ru.len}`
-      : `${ru.mult} runs of ${ru.len}`;
+    const label = ru.mult === 1 ? `run of ${ru.len}` : `${ru.mult} runs of ${ru.len}`;
     items.push({ label, pts: ru.pts });
   }
 
@@ -349,11 +375,9 @@ function scoreShowAndAdvance(t) {
   const deaBD = scoreHandBreakdown(t.hands[dealer], t.cut, false);
   const cribBD = scoreHandBreakdown(t.crib, t.cut, true);
 
-  // update totals
   t.scores[nonDealer] += nonBD.total;
   t.scores[dealer] += deaBD.total + cribBD.total;
 
-  // save for UI
   t.show = {
     nonDealer,
     dealer,
@@ -414,6 +438,7 @@ io.on("connection", (socket) => {
       chosen.push(hand[idx]);
     }
 
+    // remove from both mirrors during discard stage
     t.hands[me] = t.hands[me].filter(c => !ids.includes(c.id));
     t.pegHands[me] = t.pegHands[me].filter(c => !ids.includes(c.id));
 
@@ -445,6 +470,7 @@ io.on("connection", (socket) => {
     const val = cardValue(card.rank);
     if (t.peg.count + val > 31) return;
 
+    // play it
     hand.splice(idx, 1);
     t.pegHands[me] = hand;
 
@@ -467,6 +493,7 @@ io.on("connection", (socket) => {
       t.turn = otherPlayer(me);
     }
 
+    // End of pegging when both pegHands empty
     if (t.pegHands.PLAYER1.length === 0 && t.pegHands.PLAYER2.length === 0) {
       awardLastCardIfNeeded(t);
       scoreShowAndAdvance(t);
@@ -482,7 +509,7 @@ io.on("connection", (socket) => {
     const me = socket.playerId;
     if (!me || t.turn !== me) return;
 
-    if (canPlayAny(t.pegHands[me], t.peg.count)) return; // not allowed if you can play
+    if (canPlayAny(t.pegHands[me], t.peg.count)) return;
 
     t.peg.go[me] = true;
     pushLog(t, `${me} says GO.`);
@@ -498,7 +525,7 @@ io.on("connection", (socket) => {
     awardLastCardIfNeeded(t);
     resetPegCount(t);
 
-    // next lead: non-dealer is a decent fallback
+    // after reset, non-dealer leads (simple, stable behavior)
     t.turn = otherPlayer(t.dealer);
     pushLog(t, `${t.turn} to play.`);
 
