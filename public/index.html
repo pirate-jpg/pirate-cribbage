@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>🏴‍☠️ Pirate Cribbage</title>
-
   <link rel="stylesheet" href="/css/styles.css" />
 </head>
 <body>
@@ -36,6 +35,34 @@
         <button id="discardBtn" class="btn" disabled>Discard 2 to Crib</button>
         <button id="goBtn" class="btn danger" style="display:none;">GO</button>
         <button id="nextHandBtn" class="btn" style="display:none;">Next Hand</button>
+      </div>
+    </section>
+
+    <section id="showPanel" class="show hidden">
+      <h2>🏴‍☠️ Show Scoring</h2>
+      <div class="muted" id="cutLine">Cut: —</div>
+
+      <div class="showGrid">
+        <div class="showCard">
+          <h3 id="ndTitle">Non-dealer</h3>
+          <div id="ndCards" class="cards smallCards"></div>
+          <ul id="ndBreak"></ul>
+          <div class="total" id="ndTotal"></div>
+        </div>
+
+        <div class="showCard">
+          <h3 id="dTitle">Dealer</h3>
+          <div id="dCards" class="cards smallCards"></div>
+          <ul id="dBreak"></ul>
+          <div class="total" id="dTotal"></div>
+        </div>
+
+        <div class="showCard">
+          <h3>Crib (dealer)</h3>
+          <div id="cCards" class="cards smallCards"></div>
+          <ul id="cBreak"></ul>
+          <div class="total" id="cTotal"></div>
+        </div>
       </div>
     </section>
 
