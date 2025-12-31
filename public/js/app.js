@@ -1,9 +1,5 @@
 const socket = io();
 
-const qs = new URLSearchParams(location.search);
-const tableId = (qs.get("table") || "JIM1").toString();
-const name = (qs.get("name") || "").toString();
-
 const el = (id) => document.getElementById(id);
 
 const tableLine = el("tableLine");
@@ -23,17 +19,123 @@ const handArea = el("handArea");
 const discardBtn = el("discardBtn");
 const goBtn = el("goBtn");
 const nextHandBtn = el("nextHandBtn");
-
 const logArea = el("logArea");
 
+const showPanel = el("showPanel");
+const cutLine = el("cutLine");
+const ndTitle = el("ndTitle");
+const dTitle = el("dTitle");
+const ndCards = el("ndCards");
+const dCards = el("dCards");
+const cCards = el("cCards");
+const ndBreak = el("ndBreak");
+const dBreak = el("dBreak");
+const cBreak = el("cBreak");
+const ndTotal = el("ndTotal");
+const dTotal = el("dTotal");
+const cTotal = el("cTotal");
+
+const qs = new URLSearchParams(location.search);
+const tableId = (qs.get("table") || "JIM1").toString().trim();
+const name = (qs.get("name") || "").toString().trim().slice(0, 16);
+
 let state = null;
-let me = null;
 let selectedForDiscard = new Set();
+
+function suitClass(suit) {
+  return (suit === "♥" || suit === "♦") ? "red" : "black";
+}
+
+function makeCardButton(card, opts = {}) {
+  const btn = document.createElement("button");
+  btn.className = `cardBtn ${suitClass(card.suit)}`;
+  if (opts.selected) btn.classList.add("selected");
+  if (opts.disabled) btn.disabled = true;
+
+  const corner1 = document.createElement("div");
+  corner1.className = "corner";
+  corner1.textContent = card.rank;
+
+  const big = document.createElement("div");
+  big.className = "suitBig";
+  big.textContent = card.suit;
+
+  const corner2 = document.createElement("div");
+  corner2.className = "corner bottom";
+  corner2.textContent = card.rank;
+
+  btn.appendChild(corner1);
+  btn.appendChild(big);
+  btn.appendChild(corner2);
+
+  if (opts.onClick) btn.onclick = opts.onClick;
+  return btn;
+}
 
 function cardValue(rank) {
   if (rank === "A") return 1;
   if (["K","Q","J"].includes(rank)) return 10;
   return parseInt(rank, 10);
+}
+
+function renderBreakdown(listEl, breakdown) {
+  listEl.innerHTML = "";
+  if (!breakdown || !breakdown.items || breakdown.items.length === 0) {
+    const li = document.createElement("li");
+    li.textContent = "No points.";
+    listEl.appendChild(li);
+    return;
+  }
+  for (const item of breakdown.items) {
+    const li = document.createElement("li");
+    li.textContent = `${item.label} = ${item.pts}`;
+    listEl.appendChild(li);
+  }
+}
+
+function renderShow() {
+  if (!state || state.stage !== "show" || !state.show) {
+    showPanel.classList.add("hidden");
+    return;
+  }
+
+  showPanel.classList.remove("hidden");
+
+  const cut = state.show.cut;
+  cutLine.textContent = `Cut: ${cut.rank}${cut.suit}`;
+
+  const nonDealer = state.show.nonDealer;
+  const dealer = state.show.dealer;
+
+  ndTitle.textContent = `Non-dealer (${nonDealer})`;
+  dTitle.textContent = `Dealer (${dealer})`;
+
+  // Render cards
+  ndCards.innerHTML = "";
+  dCards.innerHTML = "";
+  cCards.innerHTML = "";
+
+  const nd = state.show.hand[nonDealer];
+  const de = state.show.hand[dealer];
+  const cr = state.show.crib;
+
+  for (const c of nd.cards) ndCards.appendChild(makeCardButton(c, { disabled: true }));
+  ndCards.appendChild(makeCardButton(cut, { disabled: true }));
+
+  for (const c of de.cards) dCards.appendChild(makeCardButton(c, { disabled: true }));
+  dCards.appendChild(makeCardButton(cut, { disabled: true }));
+
+  for (const c of cr.cards) cCards.appendChild(makeCardButton(c, { disabled: true }));
+  cCards.appendChild(makeCardButton(cut, { disabled: true }));
+
+  // Breakdowns
+  renderBreakdown(ndBreak, nd.breakdown);
+  renderBreakdown(dBreak, de.breakdown);
+  renderBreakdown(cBreak, cr.breakdown);
+
+  ndTotal.textContent = `Total: ${nd.breakdown.total}`;
+  dTotal.textContent = `Total: ${de.breakdown.total}`;
+  cTotal.textContent = `Total: ${cr.breakdown.total}`;
 }
 
 function render() {
@@ -56,136 +158,102 @@ function render() {
 
   logArea.textContent = (state.log || []).join("\n");
 
-  // stage-specific UI
+  // reset panels/buttons
   discardBtn.style.display = "none";
   goBtn.style.display = "none";
   nextHandBtn.style.display = "none";
   discardBtn.disabled = true;
 
   handArea.innerHTML = "";
+  renderShow();
 
   if (state.stage === "lobby") {
     handTitle.textContent = "Waiting for players…";
-    handHelp.textContent = "Open this same URL in another window/incognito to join as PLAYER2.";
+    handHelp.textContent = `Open another browser/incognito and join table "${state.tableId}".`;
+    showPanel.classList.add("hidden");
     return;
   }
 
   if (state.stage === "discard") {
+    showPanel.classList.add("hidden");
     handTitle.textContent = "Your Hand";
     handHelp.textContent = "Click 2 cards to discard to the crib.";
 
-    renderDiscardHand();
+    const myHand = state.myHand || [];
+    myHand.forEach(card => {
+      const selected = selectedForDiscard.has(card.id);
+      const btn = makeCardButton(card, {
+        selected,
+        onClick: () => {
+          if (selected) selectedForDiscard.delete(card.id);
+          else {
+            if (selectedForDiscard.size >= 2) return;
+            selectedForDiscard.add(card.id);
+          }
+          discardBtn.disabled = selectedForDiscard.size !== 2;
+          render();
+        }
+      });
+      handArea.appendChild(btn);
+    });
+
     discardBtn.style.display = "inline-block";
     discardBtn.disabled = selectedForDiscard.size !== 2;
+    discardBtn.onclick = () => {
+      if (selectedForDiscard.size !== 2) return;
+      socket.emit("discard_to_crib", { cardIds: Array.from(selectedForDiscard) });
+      selectedForDiscard.clear();
+      discardBtn.disabled = true;
+    };
     return;
   }
 
   if (state.stage === "pegging") {
+    showPanel.classList.add("hidden");
     handTitle.textContent = "Pegging";
-    handHelp.textContent = "Play a card without exceeding 31. If you can't play, press GO.";
+    handHelp.textContent = "Play a card without exceeding 31. If you can’t play, press GO.";
 
-    renderPeggingHand();
+    const myTurn = state.turn === state.me;
+    const myHand = state.myHand || [];
+    const count = state.peg.count;
+
+    myHand.forEach(card => {
+      const playable = myTurn && (count + cardValue(card.rank) <= 31);
+      const btn = makeCardButton(card, {
+        disabled: !playable,
+        onClick: () => socket.emit("play_card", { cardId: card.id })
+      });
+      handArea.appendChild(btn);
+    });
+
+    const canPlay = myHand.some(c => count + cardValue(c.rank) <= 31);
+    if (myTurn && !canPlay) {
+      goBtn.style.display = "inline-block";
+      goBtn.onclick = () => socket.emit("go");
+    }
     return;
   }
 
   if (state.stage === "show") {
-    handTitle.textContent = "Show / Scoring";
-    handHelp.textContent = `Cut card: ${state.cut ? state.cut.rank + state.cut.suit : "—"}  •  Click Next Hand to deal again.`;
-    renderShowHand();
+    handTitle.textContent = "Show";
+    handHelp.textContent = "Scoring breakdown is shown below. Click Next Hand when ready.";
     nextHandBtn.style.display = "inline-block";
     nextHandBtn.onclick = () => socket.emit("next_hand");
+
+    // show your 4 cards in hand area (plus cut)
+    const myHand = state.myHand || [];
+    myHand.forEach(card => handArea.appendChild(makeCardButton(card, { disabled: true })));
+    if (state.cut) handArea.appendChild(makeCardButton(state.cut, { disabled: true }));
     return;
   }
 }
 
-function makeCardButton(card, opts = {}) {
-  const btn = document.createElement("button");
-  btn.className = "cardBtn";
-  btn.textContent = `${card.rank}${card.suit}`;
-  if (opts.selected) btn.classList.add("selected");
-  if (opts.disabled) btn.disabled = true;
-  if (opts.onClick) btn.onclick = opts.onClick;
-  return btn;
-}
-
-function renderDiscardHand() {
-  // In discard stage, state.myHand is still 6 until you discard
-  const myHand = state.myHand || [];
-
-  myHand.forEach(card => {
-    const selected = selectedForDiscard.has(card.id);
-    const btn = makeCardButton(card, {
-      selected,
-      onClick: () => {
-        if (selected) selectedForDiscard.delete(card.id);
-        else {
-          if (selectedForDiscard.size >= 2) return;
-          selectedForDiscard.add(card.id);
-        }
-        discardBtn.disabled = selectedForDiscard.size !== 2;
-        render(); // refresh selection visuals
-      }
-    });
-    handArea.appendChild(btn);
-  });
-
-  discardBtn.onclick = () => {
-    if (selectedForDiscard.size !== 2) return;
-    socket.emit("discard_to_crib", { cardIds: Array.from(selectedForDiscard) });
-    selectedForDiscard.clear();
-    discardBtn.disabled = true;
-  };
-}
-
-function renderPeggingHand() {
-  const myTurn = state.turn === state.me;
-  const myHand = state.myHand || [];
-  const count = state.peg.count;
-
-  myHand.forEach(card => {
-    const playable = myTurn && (count + cardValue(card.rank) <= 31);
-    const btn = makeCardButton(card, {
-      disabled: !playable,
-      onClick: () => socket.emit("play_card", { cardId: card.id })
-    });
-    handArea.appendChild(btn);
-  });
-
-  const canPlay = myHand.some(c => (count + cardValue(c.rank) <= 31));
-  if (myTurn && !canPlay) {
-    goBtn.style.display = "inline-block";
-    goBtn.onclick = () => socket.emit("go");
-  }
-}
-
-function renderShowHand() {
-  // show your 4-card hand
-  const myHand = state.myHand || [];
-  myHand.forEach(card => {
-    const btn = makeCardButton(card, { disabled: true });
-    handArea.appendChild(btn);
-  });
-
-  // also show cut card as disabled
-  if (state.cut) {
-    const cutBtn = makeCardButton(state.cut, { disabled: true });
-    cutBtn.style.opacity = "0.9";
-    handArea.appendChild(cutBtn);
-  }
-}
-
 socket.on("connect", () => {
-  // If user didn't provide a name param, set a friendly default (doesn't matter)
   socket.emit("join_table", { tableId, name });
-});
-
-socket.on("hello", (data) => {
-  // optional; state log already shows stuff
 });
 
 socket.on("state", (s) => {
   state = s;
-  me = s.me;
   render();
 });
 
