@@ -1,4 +1,4 @@
-// Pirate Cribbage - working 2-player flow with pegging + show (hand + crib scoring)
+// Pirate Cribbage - 2-player: discard -> pegging -> show (with scoring breakdown)
 
 const path = require("path");
 const express = require("express");
@@ -60,7 +60,7 @@ function ensureTable(tableId) {
   if (!tables[tableId]) {
     tables[tableId] = {
       id: tableId,
-      players: { PLAYER1: null, PLAYER2: null }, // socket.id
+      players: { PLAYER1: null, PLAYER2: null },
       names: { PLAYER1: "Pirate", PLAYER2: "PLAYER2" },
 
       dealer: "PLAYER1",
@@ -71,13 +71,13 @@ function ensureTable(tableId) {
       cut: null,
       crib: [],
 
-      // IMPORTANT:
-      // hands = 4-card "show" hands (do not mutate during pegging)
-      // pegHands = hands you actually play from during pegging
+      // Show hands (never mutated during pegging)
       hands: { PLAYER1: [], PLAYER2: [] },
+
+      // Pegging hands (consumed during pegging)
       pegHands: { PLAYER1: [], PLAYER2: [] },
 
-      originalHands: { PLAYER1: [], PLAYER2: [] }, // 6 dealt (for optional display)
+      originalHands: { PLAYER1: [], PLAYER2: [] },
       discards: { PLAYER1: [], PLAYER2: [] },
 
       peg: {
@@ -88,6 +88,10 @@ function ensureTable(tableId) {
       },
 
       scores: { PLAYER1: 0, PLAYER2: 0 },
+
+      // NEW: show scoring breakdown cached after pegging ends
+      show: null, // { nonDealer, dealer, cut, handBreakdown: {...}, cribBreakdown: {...} }
+
       log: []
     };
   }
@@ -99,38 +103,35 @@ function pushLog(t, msg) {
   if (t.log.length > 120) t.log.shift();
 }
 
-function publicStateFor(table, me) {
-  const handForUI =
-    table.stage === "pegging"
-      ? (table.pegHands[me] || [])
-      : (table.hands[me] || []);
+function publicStateFor(t, me) {
+  const handForUI = (t.stage === "pegging") ? (t.pegHands[me] || []) : (t.hands[me] || []);
 
   return {
-    tableId: table.id,
-    stage: table.stage,
-    dealer: table.dealer,
-    turn: table.turn,
-    cut: table.cut,
-    peg: {
-      count: table.peg.count,
-      pile: table.peg.pile.map(c => ({ rank: c.rank, suit: c.suit })),
-      lastPlayer: table.peg.lastPlayer,
-      go: table.peg.go
+    tableId: t.id,
+    stage: t.stage,
+    dealer: t.dealer,
+    turn: t.turn,
+    cut: t.cut,
+    cribCount: t.crib.length,
+    discardsCount: {
+      PLAYER1: t.discards.PLAYER1.length,
+      PLAYER2: t.discards.PLAYER2.length
     },
-    scores: table.scores,
+    peg: {
+      count: t.peg.count,
+      pile: t.peg.pile.map(c => ({ rank: c.rank, suit: c.suit })),
+      lastPlayer: t.peg.lastPlayer,
+      go: t.peg.go
+    },
+    scores: t.scores,
     players: {
-      PLAYER1: table.players.PLAYER1 ? table.names.PLAYER1 : null,
-      PLAYER2: table.players.PLAYER2 ? table.names.PLAYER2 : null
+      PLAYER1: t.players.PLAYER1 ? t.names.PLAYER1 : null,
+      PLAYER2: t.players.PLAYER2 ? t.names.PLAYER2 : null
     },
     me,
     myHand: handForUI,
-    myOriginalHand: table.originalHands[me] || [],
-    cribCount: table.crib.length,
-    discardsCount: {
-      PLAYER1: table.discards.PLAYER1.length,
-      PLAYER2: table.discards.PLAYER2.length
-    },
-    log: table.log
+    log: t.log,
+    show: t.show // <- NEW: breakdown data for UI when stage === "show"
   };
 }
 
@@ -148,21 +149,20 @@ function startHand(t) {
   t.deck = shuffle(newDeck());
   t.crib = [];
   t.cut = null;
+  t.show = null;
 
   t.discards = { PLAYER1: [], PLAYER2: [] };
-
   t.peg = { count: 0, pile: [], lastPlayer: null, go: { PLAYER1:false, PLAYER2:false } };
 
-  // deal 6 each
   const p1 = t.deck.splice(0, 6);
   const p2 = t.deck.splice(0, 6);
 
   t.originalHands.PLAYER1 = [...p1];
   t.originalHands.PLAYER2 = [...p2];
 
-  // In discard stage, both hands and pegHands hold the same 6 until discards complete
   t.hands.PLAYER1 = [...p1];
   t.hands.PLAYER2 = [...p2];
+
   t.pegHands.PLAYER1 = [...p1];
   t.pegHands.PLAYER2 = [...p2];
 
@@ -174,14 +174,13 @@ function enterPegging(t) {
   t.cut = t.deck.splice(0, 1)[0];
   pushLog(t, `Cut: ${t.cut.rank}${t.cut.suit}`);
 
-  // Copy show-hands into pegHands so pegging can consume pegHands
+  // pegHands = copy of show hands
   t.pegHands.PLAYER1 = [...t.hands.PLAYER1];
   t.pegHands.PLAYER2 = [...t.hands.PLAYER2];
 
-  // non-dealer starts pegging
-  t.turn = otherPlayer(t.dealer);
-
+  t.turn = otherPlayer(t.dealer); // non-dealer starts pegging
   t.peg = { count: 0, pile: [], lastPlayer: null, go: { PLAYER1:false, PLAYER2:false } };
+
   pushLog(t, `Pegging starts. ${t.turn} to play.`);
 }
 
@@ -190,7 +189,7 @@ function canPlayAny(hand, count) {
 }
 
 /** -------------------------
- *  Pegging scoring
+ *  Pegging scoring (minimal)
  *  ------------------------- */
 
 function pegPointsAfterPlay(t, player, playedCard) {
@@ -199,7 +198,6 @@ function pegPointsAfterPlay(t, player, playedCard) {
   if (t.peg.count === 15) pts += 2;
   if (t.peg.count === 31) pts += 2;
 
-  // pairs based on most recent consecutive same ranks
   let same = 1;
   for (let i = t.peg.pile.length - 2; i >= 0; i--) {
     if (t.peg.pile[i].rank === playedCard.rank) same++;
@@ -229,7 +227,7 @@ function resetPegCount(t) {
 }
 
 /** -------------------------
- *  Hand scoring (15s, pairs, runs, flush, nobs)
+ *  SHOW scoring with breakdown
  *  ------------------------- */
 
 function combos(arr, k, start=0, prefix=[], out=[]) {
@@ -240,28 +238,38 @@ function combos(arr, k, start=0, prefix=[], out=[]) {
   return out;
 }
 
-function score15s(cards) {
-  let pts = 0;
+function score15sDetailed(cards) {
+  let count = 0;
   for (let k = 2; k <= 5; k++) {
     for (const set of combos(cards, k)) {
       const sum = set.reduce((a,c)=>a+cardValue(c.rank),0);
-      if (sum === 15) pts += 2;
+      if (sum === 15) count++;
     }
   }
-  return pts;
+  return { count, pts: count * 2 };
 }
 
-function scorePairs(cards) {
+function scorePairsDetailed(cards) {
+  // count pairs by rank
+  const byRank = {};
+  for (const c of cards) byRank[c.rank] = (byRank[c.rank] || 0) + 1;
+
+  let pairCount = 0; // number of distinct pair-combinations
   let pts = 0;
-  for (let i=0;i<cards.length;i++) {
-    for (let j=i+1;j<cards.length;j++) {
-      if (cards[i].rank === cards[j].rank) pts += 2;
+
+  for (const r of Object.keys(byRank)) {
+    const n = byRank[r];
+    if (n >= 2) {
+      // number of pair combinations = C(n,2)
+      const combos = (n * (n - 1)) / 2;
+      pairCount += combos;
+      pts += combos * 2;
     }
   }
-  return pts;
+  return { pairs: pairCount, pts };
 }
 
-function scoreRuns(cards) {
+function runsMultiplicity(cards) {
   const counts = Array(14).fill(0);
   for (const c of cards) counts[rankNum(c.rank)]++;
 
@@ -279,60 +287,85 @@ function scoreRuns(cards) {
   }
 
   for (let len=5; len>=3; len--) {
-    const rc = runCount(len);
-    if (rc > 0) return rc * len;
+    const mult = runCount(len);
+    if (mult > 0) return { len, mult, pts: len * mult };
   }
-  return 0;
+  return { len: 0, mult: 0, pts: 0 };
 }
 
-function scoreFlush(hand4, cut, isCrib) {
-  if (!hand4 || hand4.length !== 4 || !cut) return 0;
+function scoreFlushDetailed(hand4, cut, isCrib) {
   const suit = hand4[0].suit;
   const all4 = hand4.every(c => c.suit === suit);
-  if (!all4) return 0;
+  if (!all4) return { type: "none", pts: 0 };
+
   const cutMatches = cut.suit === suit;
 
-  if (isCrib) return cutMatches ? 5 : 0;
-  return cutMatches ? 5 : 4;
+  if (isCrib) {
+    return cutMatches ? { type: "5-card flush", pts: 5 } : { type: "crib needs 5-card flush", pts: 0 };
+  }
+
+  if (cutMatches) return { type: "5-card flush", pts: 5 };
+  return { type: "4-card flush", pts: 4 };
 }
 
-function scoreNobs(hand4, cut) {
-  if (!hand4 || hand4.length !== 4 || !cut) return 0;
-  return hand4.some(c => c.rank === "J" && c.suit === cut.suit) ? 1 : 0;
+function scoreNobsDetailed(hand4, cut) {
+  const has = hand4.some(c => c.rank === "J" && c.suit === cut.suit);
+  return { has, pts: has ? 1 : 0 };
 }
 
-function scoreHand(hand4, cut, isCrib=false) {
-  if (!hand4 || hand4.length !== 4 || !cut) return 0;
+function scoreHandBreakdown(hand4, cut, isCrib=false) {
   const all = hand4.concat([cut]);
-  let pts = 0;
-  pts += score15s(all);
-  pts += scorePairs(all);
-  pts += scoreRuns(all);
-  pts += scoreFlush(hand4, cut, isCrib);
-  pts += scoreNobs(hand4, cut);
-  return pts;
+  const items = [];
+
+  const fif = score15sDetailed(all);
+  if (fif.count > 0) items.push({ label: `${fif.count} fifteens`, pts: fif.pts });
+
+  const pr = scorePairsDetailed(all);
+  if (pr.pairs > 0) items.push({ label: `${pr.pairs} pair${pr.pairs===1?"":"s"}`, pts: pr.pts });
+
+  const ru = runsMultiplicity(all);
+  if (ru.len >= 3) {
+    const label = ru.mult === 1
+      ? `run of ${ru.len}`
+      : `${ru.mult} runs of ${ru.len}`;
+    items.push({ label, pts: ru.pts });
+  }
+
+  const fl = scoreFlushDetailed(hand4, cut, isCrib);
+  if (fl.pts > 0) items.push({ label: fl.type, pts: fl.pts });
+
+  const nb = scoreNobsDetailed(hand4, cut);
+  if (nb.pts > 0) items.push({ label: "nobs (jack matches cut suit)", pts: 1 });
+
+  const total = items.reduce((a,i)=>a+i.pts,0);
+  return { total, items };
 }
 
 function scoreShowAndAdvance(t) {
   const nonDealer = otherPlayer(t.dealer);
   const dealer = t.dealer;
 
-  // crib must be 4 cards
-  if (t.crib.length !== 4) {
-    pushLog(t, `SHOW ERROR: crib has ${t.crib.length} cards (expected 4).`);
-  }
+  const nonBD = scoreHandBreakdown(t.hands[nonDealer], t.cut, false);
+  const deaBD = scoreHandBreakdown(t.hands[dealer], t.cut, false);
+  const cribBD = scoreHandBreakdown(t.crib, t.cut, true);
 
-  const nonPts = scoreHand(t.hands[nonDealer], t.cut, false);
-  const dealPts = scoreHand(t.hands[dealer], t.cut, false);
-  const cribPts = scoreHand(t.crib, t.cut, true);
+  // update totals
+  t.scores[nonDealer] += nonBD.total;
+  t.scores[dealer] += deaBD.total + cribBD.total;
 
-  t.scores[nonDealer] += nonPts;
-  t.scores[dealer] += dealPts + cribPts;
+  // save for UI
+  t.show = {
+    nonDealer,
+    dealer,
+    cut: t.cut,
+    hand: {
+      [nonDealer]: { cards: t.hands[nonDealer], breakdown: nonBD },
+      [dealer]: { cards: t.hands[dealer], breakdown: deaBD }
+    },
+    crib: { cards: t.crib, breakdown: cribBD }
+  };
 
-  pushLog(t, `SHOW: ${nonDealer} hand +${nonPts}`);
-  pushLog(t, `SHOW: ${dealer} hand +${dealPts}`);
-  pushLog(t, `SHOW: Crib (dealer) +${cribPts}`);
-
+  pushLog(t, `SHOW: ${nonDealer} +${nonBD.total}, ${dealer} +${deaBD.total}, crib +${cribBD.total}`);
   t.stage = "show";
 }
 
@@ -348,10 +381,7 @@ io.on("connection", (socket) => {
     let me = null;
     if (!t.players.PLAYER1) me = "PLAYER1";
     else if (!t.players.PLAYER2) me = "PLAYER2";
-    else {
-      socket.emit("error_msg", "Table is full (2 players). Use a different table name.");
-      return;
-    }
+    else return socket.emit("error_msg", "Table is full (2 players).");
 
     t.players[me] = socket.id;
     t.names[me] = (name || me).toString().trim().slice(0, 16) || me;
@@ -360,8 +390,6 @@ io.on("connection", (socket) => {
     socket.playerId = me;
 
     pushLog(t, `${t.names[me]} joined as ${me}.`);
-    socket.emit("hello", { msg: `Ahoy! Pirate Cribbage server is alive.` });
-
     emitState(tableId);
 
     if (t.players.PLAYER1 && t.players.PLAYER2 && t.stage === "lobby") {
@@ -375,10 +403,8 @@ io.on("connection", (socket) => {
     if (!t || t.stage !== "discard") return;
 
     const me = socket.playerId;
-    if (!me) return;
-
     const ids = Array.isArray(cardIds) ? cardIds : [];
-    if (ids.length !== 2) return;
+    if (!me || ids.length !== 2) return;
 
     const hand = t.hands[me];
     const chosen = [];
@@ -388,7 +414,6 @@ io.on("connection", (socket) => {
       chosen.push(hand[idx]);
     }
 
-    // remove from BOTH (they are equivalent in discard stage)
     t.hands[me] = t.hands[me].filter(c => !ids.includes(c.id));
     t.pegHands[me] = t.pegHands[me].filter(c => !ids.includes(c.id));
 
@@ -400,10 +425,7 @@ io.on("connection", (socket) => {
     const p1Done = t.discards.PLAYER1.length === 2;
     const p2Done = t.discards.PLAYER2.length === 2;
 
-    if (p1Done && p2Done && t.crib.length === 4) {
-      // at this moment, t.hands are 4-card show hands
-      enterPegging(t);
-    }
+    if (p1Done && p2Done && t.crib.length === 4) enterPegging(t);
 
     emitState(socket.tableId);
   });
@@ -423,7 +445,6 @@ io.on("connection", (socket) => {
     const val = cardValue(card.rank);
     if (t.peg.count + val > 31) return;
 
-    // play from pegHands ONLY
     hand.splice(idx, 1);
     t.pegHands[me] = hand;
 
@@ -446,7 +467,6 @@ io.on("connection", (socket) => {
       t.turn = otherPlayer(me);
     }
 
-    // End of pegging when BOTH pegHands empty
     if (t.pegHands.PLAYER1.length === 0 && t.pegHands.PLAYER2.length === 0) {
       awardLastCardIfNeeded(t);
       scoreShowAndAdvance(t);
@@ -462,8 +482,7 @@ io.on("connection", (socket) => {
     const me = socket.playerId;
     if (!me || t.turn !== me) return;
 
-    // GO only if you truly cannot play from pegHands
-    if (canPlayAny(t.pegHands[me], t.peg.count)) return;
+    if (canPlayAny(t.pegHands[me], t.peg.count)) return; // not allowed if you can play
 
     t.peg.go[me] = true;
     pushLog(t, `${me} says GO.`);
@@ -473,22 +492,17 @@ io.on("connection", (socket) => {
     if (canPlayAny(t.pegHands[other], t.peg.count)) {
       t.turn = other;
       pushLog(t, `${other} to play.`);
-      emitState(socket.tableId);
-      return;
+      return emitState(socket.tableId);
     }
 
-    // Both cannot play -> award last, reset
     awardLastCardIfNeeded(t);
     resetPegCount(t);
 
-    // after reset, the player who played last leads; fallback non-dealer
-    const leader = t.peg.lastPlayer || otherPlayer(t.dealer);
-    t.turn = leader;
+    // next lead: non-dealer is a decent fallback
+    t.turn = otherPlayer(t.dealer);
     pushLog(t, `${t.turn} to play.`);
 
-    if (t.pegHands.PLAYER1.length === 0 && t.pegHands.PLAYER2.length === 0) {
-      scoreShowAndAdvance(t);
-    }
+    if (t.pegHands.PLAYER1.length === 0 && t.pegHands.PLAYER2.length === 0) scoreShowAndAdvance(t);
 
     emitState(socket.tableId);
   });
@@ -498,7 +512,6 @@ io.on("connection", (socket) => {
     if (!t || t.stage !== "show") return;
 
     t.dealer = otherPlayer(t.dealer);
-
     if (t.players.PLAYER1 && t.players.PLAYER2) {
       startHand(t);
       emitState(socket.tableId);
@@ -514,7 +527,6 @@ io.on("connection", (socket) => {
       t.players[me] = null;
       pushLog(t, `${me} disconnected.`);
     }
-
     emitState(socket.tableId);
   });
 });
