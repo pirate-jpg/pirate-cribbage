@@ -22,8 +22,50 @@
       <div id="dealerLine">Dealer: —</div>
       <div id="turnLine">Turn: —</div>
       <div id="scoreLine">Score: —</div>
-      <div id="pegLine">Peg: —</div>
       <div id="cribLine">Crib cards: —</div>
+    </section>
+
+    <!-- Cribbage board -->
+    <section class="board">
+      <div class="boardHeader">
+        <h2>🏴‍☠️ Board to 121</h2>
+        <div class="muted" id="boardHelp">First to 121 wins.</div>
+      </div>
+      <div class="trackWrap">
+        <div class="track">
+          <div class="trackLine">
+            <div class="laneLabel" id="p1Label">P1</div>
+            <div class="lane">
+              <div id="p1Peg" class="peg p1"></div>
+            </div>
+          </div>
+          <div class="trackLine">
+            <div class="laneLabel" id="p2Label">P2</div>
+            <div class="lane">
+              <div id="p2Peg" class="peg p2"></div>
+            </div>
+          </div>
+          <div class="ticks" id="ticks"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pegging HUD -->
+    <section class="peggingHud">
+      <div class="hudTop">
+        <div class="countBox">
+          <div class="countTitle">COUNT</div>
+          <div id="countNum" class="countNum">0</div>
+        </div>
+        <div class="hudInfo">
+          <div id="peggingStatus" class="muted">—</div>
+          <div id="lastScore" class="lastScore hidden">—</div>
+        </div>
+      </div>
+      <div>
+        <div class="muted">Played this sequence:</div>
+        <div id="pileArea" class="cards pile"></div>
+      </div>
     </section>
 
     <section class="hand">
@@ -38,6 +80,7 @@
       </div>
     </section>
 
+    <!-- Show breakdown (unchanged from before, still here) -->
     <section id="showPanel" class="show hidden">
       <h2>🏴‍☠️ Show Scoring</h2>
       <div class="muted" id="cutLine">Cut: —</div>
