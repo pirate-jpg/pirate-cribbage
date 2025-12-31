@@ -7,10 +7,13 @@
   <link rel="stylesheet" href="/css/styles.css" />
 </head>
 <body>
-  <header class="topbar">
+  <header class="topbar ropeTop">
     <div class="brand">
-      <div class="brandTitle">🏴‍☠️ Pirate Cribbage</div>
-      <div class="brandSub">Pirate TV Game Desk</div>
+      <div class="brandTitle">
+        <span class="mark">⚓</span>
+        <span>🏴‍☠️ Pirate Cribbage</span>
+      </div>
+      <div class="brandSub">Pirate TV • Two-player Cribbage</div>
     </div>
     <div class="meta">
       <div id="tableLine"></div>
@@ -19,24 +22,47 @@
   </header>
 
   <main class="layout">
-    <section class="panel infoPanel">
+    <section class="panel infoPanel ropePanel">
       <div id="playersLine" class="line"></div>
-      <div id="stageLine" class="line"></div>
-      <div id="dealerLine" class="line"></div>
-      <div id="turnLine" class="line"></div>
-      <div id="scoreLine" class="line"></div>
-      <div id="matchLine" class="line"></div>
+      <div class="chipsRow">
+        <div class="chip" id="stageLine"></div>
+        <div class="chip" id="dealerLine"></div>
+        <div class="chip" id="turnLine"></div>
+      </div>
+
+      <div class="scoreRow">
+        <div class="scoreCard">
+          <div class="scoreLabel">Game (to 121)</div>
+          <div id="scoreLine" class="scoreValue"></div>
+        </div>
+
+        <div class="scoreCard">
+          <div class="scoreLabel">Match Wins</div>
+          <div class="matchScore">
+            <div class="matchSide">
+              <div class="matchName" id="matchP1Name">P1</div>
+              <div class="pips" id="matchP1Pips"></div>
+            </div>
+            <div class="matchDivider">⚔️</div>
+            <div class="matchSide">
+              <div class="matchName" id="matchP2Name">P2</div>
+              <div class="pips" id="matchP2Pips"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div id="cribLine" class="line small"></div>
     </section>
 
-    <section class="panel boardPanel">
+    <section class="panel boardPanel ropePanel">
       <div class="boardHeader">
         <div class="boardTitle">Cribbage Board</div>
-        <div class="boardHint">First to 121 wins the game</div>
+        <div class="boardHint">Captain’s race to 121</div>
       </div>
 
-      <div class="boardWrap">
-        <svg id="boardSvg" viewBox="0 0 960 220" role="img" aria-label="Cribbage board"></svg>
+      <div class="boardWrap boardWrapBig">
+        <svg id="boardSvg" viewBox="0 0 960 280" role="img" aria-label="Cribbage board"></svg>
       </div>
 
       <div class="boardLegend">
@@ -51,7 +77,7 @@
       </div>
     </section>
 
-    <section class="panel playPanel">
+    <section class="panel playPanel ropePanel">
       <div class="handHeader">
         <div>
           <div id="handTitle" class="handTitle">Waiting…</div>
@@ -59,7 +85,7 @@
         </div>
         <div class="actions">
           <button id="discardBtn" class="btn primary">Send to Crib</button>
-          <button id="goBtn" class="btn warn">GO</button>
+          <button id="goBtn" class="btn goBig">GO</button>
           <button id="nextHandBtn" class="btn primary">Next Hand</button>
         </div>
       </div>
@@ -68,17 +94,18 @@
 
       <div class="peggingHud">
         <div class="hudRow">
-          <div class="hudBox">
-            <div class="hudLabel">Count</div>
-            <div id="countNum" class="hudValue">0</div>
+          <div class="countBadge">
+            <div class="countBadgeTop">⚓ COUNT</div>
+            <div id="countNum" class="countBadgeNum">0</div>
+            <div class="countBadgeBottom">Keep it ≤ 31</div>
           </div>
+
           <div class="hudBox hudWide">
             <div class="hudLabel">Pegging Status</div>
             <div id="peggingStatus" class="hudValueSmall">—</div>
+            <div id="lastScore" class="lastScore hidden"></div>
           </div>
         </div>
-
-        <div id="lastScore" class="lastScore hidden"></div>
 
         <div class="pileWrap">
           <div class="pileTitle">Cards played (this count)</div>
@@ -87,7 +114,7 @@
       </div>
     </section>
 
-    <section id="showPanel" class="panel showPanel hidden">
+    <section id="showPanel" class="panel showPanel ropePanel hidden">
       <div class="showHeader">
         <div class="showTitle">Show</div>
         <div id="cutLine" class="cutLine"></div>
@@ -117,7 +144,7 @@
       </div>
     </section>
 
-    <section class="panel logPanel">
+    <section class="panel logPanel ropePanel">
       <div class="logTitle">Captain’s Log</div>
       <pre id="logArea" class="logArea"></pre>
     </section>
@@ -125,7 +152,7 @@
 
   <!-- Game Over Modal -->
   <div id="gameOverModal" class="modal hidden" aria-hidden="true">
-    <div class="modalCard">
+    <div class="modalCard ropePanel">
       <div class="modalTitle">🏁 Game Over</div>
       <div id="winnerLine" class="modalText"></div>
       <div id="finalLine" class="modalText small"></div>
