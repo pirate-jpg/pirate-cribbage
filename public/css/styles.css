@@ -6,8 +6,10 @@
   --muted: #b7c3cf;
   --accent: #f5c542;
   --danger: #d9534f;
-  --card: #0e354f;
+
+  --cardFace: rgba(255,255,255,0.10);
   --cardBorder: rgba(255,255,255,0.18);
+  --cardShadow: rgba(0,0,0,0.25);
 }
 
 * { box-sizing: border-box; }
@@ -39,7 +41,7 @@ body {
 }
 
 .panel {
-  max-width: 920px;
+  max-width: 980px;
   margin: 0 auto;
   padding: 14px;
 }
@@ -56,7 +58,7 @@ body {
   font-size: 14px;
 }
 
-.hand {
+.hand, .show, .log {
   background: rgba(10, 34, 51, 0.86);
   border: 1px solid rgba(255,255,255,0.10);
   border-radius: 14px;
@@ -64,7 +66,7 @@ body {
   margin-bottom: 14px;
 }
 
-.hand h2 {
+.hand h2, .show h2 {
   margin: 0 0 8px;
   font-size: 24px;
 }
@@ -82,18 +84,49 @@ body {
   margin: 10px 0 12px;
 }
 
+/* --- Graphical card --- */
 .cardBtn {
-  background: var(--card);
+  position: relative;
+  width: 78px;
+  height: 108px;
+  border-radius: 14px;
   border: 1px solid var(--cardBorder);
-  border-radius: 12px;
-  padding: 10px 12px;
-  min-width: 72px;
-  text-align: center;
-  color: var(--text);
+  background: var(--cardFace);
+  box-shadow: 0 10px 26px var(--cardShadow);
   cursor: pointer;
   user-select: none;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  padding: 0;
 }
+
+.cardBtn .corner {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 1.0;
+  text-align: left;
+}
+
+.cardBtn .corner.bottom {
+  top: auto;
+  left: auto;
+  right: 10px;
+  bottom: 8px;
+  transform: rotate(180deg);
+}
+
+.cardBtn .suitBig {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 36px;
+  opacity: 0.95;
+}
+
+.cardBtn.red { color: #ff6b6b; }
+.cardBtn.black { color: #e9f2ff; }
 
 .cardBtn.selected {
   outline: 2px solid var(--accent);
@@ -103,6 +136,13 @@ body {
 .cardBtn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* Smaller cards in Show panel */
+.smallCards .cardBtn {
+  width: 64px;
+  height: 92px;
+  border-radius: 12px;
 }
 
 .actions {
@@ -129,16 +169,42 @@ body {
   border-color: rgba(217,83,79,0.55);
 }
 
-.log {
-  background: rgba(11, 42, 63, 0.78);
-  border: 1px solid rgba(255,255,255,0.10);
-  border-radius: 14px;
-  padding: 12px 14px;
+.hidden { display: none; }
+
+.showGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 10px;
 }
 
-.log h3 {
-  margin: 0 0 8px;
+.showCard {
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(0,0,0,0.18);
 }
+
+.showCard h3 { margin: 0 0 6px; }
+
+.showCard ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: #dfe7ef;
+  font-size: 14px;
+}
+
+.total {
+  margin-top: 10px;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .showGrid { grid-template-columns: 1fr; }
+}
+
+.log h3 { margin: 0 0 8px; }
 
 #logArea {
   margin: 0;
