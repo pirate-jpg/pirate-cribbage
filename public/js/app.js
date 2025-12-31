@@ -1,4 +1,5 @@
-const socket = io();
+let socket = null;
+
 const el = (id) => document.getElementById(id);
 
 const tableLine = el("tableLine");
@@ -52,21 +53,13 @@ const p2Name = el("p2Name");
 const p1Wins = el("p1Wins");
 const p2Wins = el("p2Wins");
 
+/* Modal elements */
+const nameModal = el("nameModal");
+const nameInput = el("nameInput");
+const nameJoinBtn = el("nameJoinBtn");
+
 const qs = new URLSearchParams(location.search);
 const tableId = (qs.get("table") || "JIM1").toString().trim();
-
-// Prompt for name if not provided in URL
-let name = (qs.get("name") || "").toString().trim().slice(0, 16);
-if (!name) {
-  const entered = (prompt("Enter your pirate name:", "") || "").toString().trim();
-  name = entered.slice(0, 16);
-  // optional: update the URL so refresh keeps it
-  if (name) {
-    qs.set("name", name);
-    const newUrl = `${location.pathname}?${qs.toString()}`;
-    history.replaceState(null, "", newUrl);
-  }
-}
 
 let state = null;
 let selectedForDiscard = new Set();
@@ -171,9 +164,7 @@ function renderPileAndHud() {
   pileArea.innerHTML = "";
   const pile = state.peg?.pile || [];
   const show = pile.length > 10 ? pile.slice(pile.length - 10) : pile;
-  for (const c of show) {
-    pileArea.appendChild(makeCardButton(c, { disabled: true }));
-  }
+  for (const c of show) pileArea.appendChild(makeCardButton(c, { disabled: true }));
 
   if (state.stage !== "pegging") {
     peggingStatus.textContent = "Pegging info appears during the pegging phase.";
@@ -216,7 +207,6 @@ function renderBreakdown(listEl, breakdown) {
 
 function displayNameFor(playerId) {
   if (!state) return playerId;
-  // state.players maps PLAYER1->name, PLAYER2->name
   return state.players?.[playerId] || playerId;
 }
 
@@ -237,7 +227,6 @@ function renderShow() {
   ndTitle.textContent = `Non-dealer (${displayNameFor(nonDealer)})`;
   dTitle.textContent = `Dealer (${displayNameFor(dealer)})`;
 
-  // ✅ Crib owner label
   if (cribTitle) cribTitle.textContent = `Crib (${displayNameFor(dealer)})`;
 
   ndCards.innerHTML = "";
@@ -266,36 +255,6 @@ function renderShow() {
   cTotal.textContent = `Total: ${cr.breakdown.total}`;
 }
 
-function renderGameOver() {
-  if (!state) return false;
-  if (!state.gameOver && !state.matchOver) return false;
-
-  showPanel.classList.add("hidden");
-  handArea.innerHTML = "";
-
-  const p1 = state.scores.PLAYER1;
-  const p2 = state.scores.PLAYER2;
-
-  if (state.matchOver) {
-    const w = state.matchWinner;
-    handTitle.textContent = "🏴‍☠️ Match Over!";
-    handHelp.textContent = w ? `${displayNameFor(w)} wins the match. Final game: P1=${p1} • P2=${p2}` : `Match ended. Final game: P1=${p1} • P2=${p2}`;
-    nextGameBtn.style.display = "none";
-    nextHandBtn.style.display = "none";
-    return true;
-  }
-
-  const w = state.winner;
-  handTitle.textContent = "🏁 Game Over!";
-  handHelp.textContent = w ? `${displayNameFor(w)} wins. Final score: P1=${p1} • P2=${p2}` : `Tie game. Final score: P1=${p1} • P2=${p2}`;
-
-  nextGameBtn.style.display = "inline-block";
-  nextGameBtn.onclick = () => socket.emit("next_game");
-
-  nextHandBtn.style.display = "none";
-  return true;
-}
-
 function render() {
   if (!state) return;
 
@@ -312,7 +271,6 @@ function render() {
 
   scoreLine.textContent = `P1 ${state.scores.PLAYER1}/${state.gameTarget || 121} • P2 ${state.scores.PLAYER2}/${state.gameTarget || 121}`;
   cribLine.textContent = `Crib: ${state.cribCount} | Discards: P1=${state.discardsCount.PLAYER1}/2 P2=${state.discardsCount.PLAYER2}/2`;
-
   logArea.textContent = (state.log || []).join("\n");
 
   initTicks();
@@ -329,7 +287,8 @@ function render() {
 
   if (newMatchBtn) newMatchBtn.onclick = () => socket.emit("new_match");
 
-  if (renderGameOver()) return;
+  // stage rendering
+  handArea.innerHTML = "";
 
   if (state.stage === "lobby") {
     handTitle.textContent = "Waiting for crew…";
@@ -342,7 +301,6 @@ function render() {
     handTitle.textContent = "Your Hand";
     handHelp.textContent = "Click 2 cards to discard to the crib.";
 
-    handArea.innerHTML = "";
     const myHand = state.myHand || [];
     myHand.forEach(card => {
       const selected = selectedForDiscard.has(card.id);
@@ -377,7 +335,6 @@ function render() {
     handTitle.textContent = "Pegging";
     handHelp.textContent = "Play a card without exceeding 31. If you can’t play, press GO.";
 
-    handArea.innerHTML = "";
     const myTurn = state.turn === state.me;
     const myHand = state.myHand || [];
     const count = state.peg.count;
@@ -406,7 +363,6 @@ function render() {
     nextHandBtn.style.display = "inline-block";
     nextHandBtn.onclick = () => socket.emit("next_hand");
 
-    handArea.innerHTML = "";
     const myHand = state.myHand || [];
     myHand.forEach(card => handArea.appendChild(makeCardButton(card, { disabled: true })));
     if (state.cut) handArea.appendChild(makeCardButton(state.cut, { disabled: true }));
@@ -414,13 +370,57 @@ function render() {
   }
 }
 
-socket.on("connect", () => {
-  socket.emit("join_table", { tableId, name });
-});
+/* ---------- Name modal + connect ---------- */
 
-socket.on("state", (s) => {
-  state = s;
-  render();
-});
+function openNameModal() {
+  nameModal.classList.remove("hidden");
+  nameInput.value = "";
+  nameInput.focus();
 
-socket.on("error_msg", (msg) => alert(msg));
+  const submit = () => {
+    const entered = (nameInput.value || "").toString().trim().slice(0, 16);
+    if (!entered) {
+      nameInput.focus();
+      return;
+    }
+    localStorage.setItem("pirateName", entered);
+    nameModal.classList.add("hidden");
+    connectAndJoin(entered);
+  };
+
+  nameJoinBtn.onclick = submit;
+  nameInput.onkeydown = (e) => {
+    if (e.key === "Enter") submit();
+  };
+}
+
+function connectAndJoin(playerName) {
+  socket = io();
+
+  socket.on("connect", () => {
+    socket.emit("join_table", { tableId, name: playerName });
+  });
+
+  socket.on("state", (s) => {
+    state = s;
+    render();
+  });
+
+  socket.on("error_msg", (msg) => alert(msg));
+}
+
+(function boot() {
+  // Priority: URL ?name=  -> localStorage -> modal
+  let playerName = (qs.get("name") || "").toString().trim().slice(0, 16);
+
+  if (!playerName) {
+    const stored = (localStorage.getItem("pirateName") || "").toString().trim().slice(0, 16);
+    if (stored) playerName = stored;
+  }
+
+  if (playerName) {
+    connectAndJoin(playerName);
+  } else {
+    openNameModal();
+  }
+})();
