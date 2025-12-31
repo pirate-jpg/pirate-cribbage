@@ -1,3 +1,5 @@
+alert("app.js loaded");
+
 let socket = null;
 
 const el = (id) => document.getElementById(id);
