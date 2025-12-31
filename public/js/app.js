@@ -1,5 +1,4 @@
 const socket = io();
-
 const el = (id) => document.getElementById(id);
 
 const tableLine = el("tableLine");
@@ -9,7 +8,6 @@ const stageLine = el("stageLine");
 const dealerLine = el("dealerLine");
 const turnLine = el("turnLine");
 const scoreLine = el("scoreLine");
-const pegLine = el("pegLine");
 const cribLine = el("cribLine");
 
 const handTitle = el("handTitle");
@@ -34,6 +32,17 @@ const cBreak = el("cBreak");
 const ndTotal = el("ndTotal");
 const dTotal = el("dTotal");
 const cTotal = el("cTotal");
+
+const pileArea = el("pileArea");
+const countNum = el("countNum");
+const peggingStatus = el("peggingStatus");
+const lastScore = el("lastScore");
+
+const p1Peg = el("p1Peg");
+const p2Peg = el("p2Peg");
+const p1Label = el("p1Label");
+const p2Label = el("p2Label");
+const ticks = el("ticks");
 
 const qs = new URLSearchParams(location.search);
 const tableId = (qs.get("table") || "JIM1").toString().trim();
@@ -78,6 +87,75 @@ function cardValue(rank) {
   return parseInt(rank, 10);
 }
 
+function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+
+function initTicks() {
+  ticks.innerHTML = "";
+  const marks = [0, 30, 60, 90, 121];
+  for (const m of marks) {
+    const span = document.createElement("span");
+    span.textContent = m.toString();
+    ticks.appendChild(span);
+  }
+}
+
+function setPegPosition(pegEl, score) {
+  // lane width is 100%; map 0..121 -> 0..100%
+  const s = clamp(score, 0, 121);
+  const pct = (s / 121) * 100;
+  pegEl.style.left = `${pct}%`;
+}
+
+function renderBoard() {
+  if (!state) return;
+
+  p1Label.textContent = state.players.PLAYER1 ? `P1 (${state.players.PLAYER1})` : "P1";
+  p2Label.textContent = state.players.PLAYER2 ? `P2 (${state.players.PLAYER2})` : "P2";
+
+  setPegPosition(p1Peg, state.scores.PLAYER1);
+  setPegPosition(p2Peg, state.scores.PLAYER2);
+}
+
+function renderPileAndHud() {
+  if (!state) return;
+
+  countNum.textContent = String(state.peg?.count ?? 0);
+
+  // pile cards
+  pileArea.innerHTML = "";
+  const pile = state.peg?.pile || [];
+  // show all cards in current sequence; if it gets long, only show last 10
+  const show = pile.length > 10 ? pile.slice(pile.length - 10) : pile;
+  for (const c of show) {
+    pileArea.appendChild(makeCardButton(c, { disabled: true }));
+  }
+
+  // status line
+  if (state.stage !== "pegging") {
+    peggingStatus.textContent = "Pegging info appears during the pegging phase.";
+    lastScore.classList.add("hidden");
+    return;
+  }
+
+  const myTurn = state.turn === state.me;
+  const mine = state.myHandCount;
+  const opp = state.oppHandCount;
+
+  peggingStatus.textContent =
+    `${myTurn ? "Your turn" : "Opponent's turn"} • You have ${mine} card(s) • Opponent has ${opp} card(s).`;
+
+  // last score callout
+  const ev = state.lastPegEvent;
+  if (ev && ev.pts && ev.pts > 0) {
+    const who = (ev.player === state.me) ? "You" : "Opponent";
+    const reasonText = (ev.reasons || []).join(", ");
+    lastScore.textContent = `${who} scored +${ev.pts} (${reasonText})`;
+    lastScore.classList.remove("hidden");
+  } else {
+    lastScore.classList.add("hidden");
+  }
+}
+
 function renderBreakdown(listEl, breakdown) {
   listEl.innerHTML = "";
   if (!breakdown || !breakdown.items || breakdown.items.length === 0) {
@@ -110,7 +188,6 @@ function renderShow() {
   ndTitle.textContent = `Non-dealer (${nonDealer})`;
   dTitle.textContent = `Dealer (${dealer})`;
 
-  // Render cards
   ndCards.innerHTML = "";
   dCards.innerHTML = "";
   cCards.innerHTML = "";
@@ -128,7 +205,6 @@ function renderShow() {
   for (const c of cr.cards) cCards.appendChild(makeCardButton(c, { disabled: true }));
   cCards.appendChild(makeCardButton(cut, { disabled: true }));
 
-  // Breakdowns
   renderBreakdown(ndBreak, nd.breakdown);
   renderBreakdown(dBreak, de.breakdown);
   renderBreakdown(cBreak, cr.breakdown);
@@ -153,19 +229,20 @@ function render() {
   turnLine.textContent = `Turn: ${state.turn}`;
   scoreLine.textContent = `Score: P1=${state.scores.PLAYER1} | P2=${state.scores.PLAYER2}`;
 
-  pegLine.textContent = `Peg Count: ${state.peg.count} | Pile: ${state.peg.pile.map(c => `${c.rank}${c.suit}`).join(" ")}`;
   cribLine.textContent = `Crib cards: ${state.cribCount} | Discards: P1=${state.discardsCount.PLAYER1}/2 P2=${state.discardsCount.PLAYER2}/2`;
-
   logArea.textContent = (state.log || []).join("\n");
 
-  // reset panels/buttons
+  initTicks();
+  renderBoard();
+  renderPileAndHud();
+  renderShow();
+
+  // reset buttons
   discardBtn.style.display = "none";
   goBtn.style.display = "none";
   nextHandBtn.style.display = "none";
   discardBtn.disabled = true;
-
   handArea.innerHTML = "";
-  renderShow();
 
   if (state.stage === "lobby") {
     handTitle.textContent = "Waiting for players…";
@@ -226,8 +303,9 @@ function render() {
       handArea.appendChild(btn);
     });
 
+    // GO button only if it's your turn, you have cards, and none playable.
     const canPlay = myHand.some(c => count + cardValue(c.rank) <= 31);
-    if (myTurn && !canPlay) {
+    if (myTurn && myHand.length > 0 && !canPlay) {
       goBtn.style.display = "inline-block";
       goBtn.onclick = () => socket.emit("go");
     }
@@ -240,7 +318,6 @@ function render() {
     nextHandBtn.style.display = "inline-block";
     nextHandBtn.onclick = () => socket.emit("next_hand");
 
-    // show your 4 cards in hand area (plus cut)
     const myHand = state.myHand || [];
     myHand.forEach(card => handArea.appendChild(makeCardButton(card, { disabled: true })));
     if (state.cut) handArea.appendChild(makeCardButton(state.cut, { disabled: true }));
