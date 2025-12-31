@@ -4,21 +4,43 @@ const http = require("http");
 const { Server } = require("socket.io");
 
 const app = express();
-app.use(express.static("public"));
-
-app.get("/health", (req, res) => res.send("ok"));
-
 const server = http.createServer(app);
 const io = new Server(server);
 
+// Serve frontend
+app.use(express.static("public"));
+
+// Health check (Railway likes this)
+app.get("/health", (req, res) => {
+  res.status(200).send("ok");
+});
+
 io.on("connection", (socket) => {
-  socket.emit("hello", { msg: "🏴‍☠️ Ahoy! Pirate Cribbage server is alive." });
+  console.log("Socket connected:", socket.id);
+
+  socket.emit("hello", {
+    msg: "🏴‍☠️ Ahoy! Pirate Cribbage server is alive."
+  });
 
   socket.on("ping", () => {
-    socket.emit("hello", { msg: "🏴‍☠️ Ahoy! Ping received loud and clear." });
+    console.log("Received ping from", socket.id);
+    socket.emit("pong", {
+      msg: "✅ Pong received by server."
+    });
+  });
+
+  socket.on("disconnect", () => {
+    console.log("Socket disconnected:", socket.id);
   });
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log("Listening on", PORT));
+const PORT = process.env.PORT || 8080;
 
+server.listen(PORT, "0.0.0.0", () => {
+  console.log("Listening on", PORT);
+});
+
+// 🚨 IMPORTANT: prevent Railway from killing idle servers
+setInterval(() => {
+  console.log("Heartbeat – server alive");
+}, 30000);
