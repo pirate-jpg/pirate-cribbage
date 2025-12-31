@@ -2,71 +2,48 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>🏴‍☠️ Pirate Cribbage</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="/css/styles.css">
+
+  <link rel="stylesheet" href="/css/styles.css" />
 </head>
 <body>
-  <div class="wrap">
+  <header class="top">
     <h1>🏴‍☠️ Pirate Cribbage</h1>
-
-    <div id="joinPanel" class="card">
-      <div class="row">
-        <label>Table Code</label>
-        <input id="code" placeholder="ABCD" maxlength="8" />
-      </div>
-      <div class="row">
-        <label>Your Name</label>
-        <input id="name" placeholder="Jim" maxlength="20" />
-      </div>
-      <button id="joinBtn">Join Table</button>
-      <div id="err" class="err"></div>
-      <p class="hint">Open this same URL on another device/browser and join the same table code.</p>
+    <div class="meta">
+      <div id="tableLine">Table: —</div>
+      <div id="meLine">You: —</div>
     </div>
+  </header>
 
-    <div id="gamePanel" class="card hidden">
-      <div class="top">
-        <div><b>Table:</b> <span id="tableCode"></span></div>
-        <div><b>You:</b> <span id="youName"></span></div>
+  <main class="panel">
+    <section class="status">
+      <div id="playersLine">Players: —</div>
+      <div id="stageLine">Stage: —</div>
+      <div id="dealerLine">Dealer: —</div>
+      <div id="turnLine">Turn: —</div>
+      <div id="scoreLine">Score: —</div>
+      <div id="pegLine">Peg: —</div>
+      <div id="cribLine">Crib cards: —</div>
+    </section>
+
+    <section class="hand">
+      <h2 id="handTitle">Your Hand</h2>
+      <div id="handHelp" class="muted"></div>
+      <div id="handArea" class="cards"></div>
+
+      <div class="actions">
+        <button id="discardBtn" class="btn" disabled>Discard 2 to Crib</button>
+        <button id="goBtn" class="btn danger" style="display:none;">GO</button>
+        <button id="nextHandBtn" class="btn" style="display:none;">Next Hand</button>
       </div>
+    </section>
 
-      <div id="roomState" class="small"></div>
-
-      <h2>Your Hand <span class="small">(click 2 cards to discard to the crib)</span></h2>
-      <div id="hand" class="hand"></div>
-      <div id="discardNote" class="small"></div>
-
-      <div id="revealPanel" class="hidden">
-        <h2>Reveal</h2>
-        <div><b>Starter:</b> <span id="starter"></span></div>
-        <div class="grid2">
-          <div>
-            <h3>Hands</h3>
-            <pre id="handsOut"></pre>
-          </div>
-          <div>
-            <h3>Crib</h3>
-            <pre id="cribOut"></pre>
-          </div>
-        </div>
-        <div class="grid2">
-          <div>
-            <h3>Points This Hand</h3>
-            <pre id="pointsOut"></pre>
-          </div>
-          <div>
-            <h3>Total Scores</h3>
-            <pre id="scoresOut"></pre>
-          </div>
-        </div>
-        <button id="nextHandBtn">Next Hand</button>
-      </div>
-
-      <hr />
-      <button id="pingBtn" class="ghost">Ping Server</button>
-      <pre id="log" class="log"></pre>
-    </div>
-  </div>
+    <section class="log">
+      <h3>Log</h3>
+      <pre id="logArea"></pre>
+    </section>
+  </main>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/app.js"></script>
