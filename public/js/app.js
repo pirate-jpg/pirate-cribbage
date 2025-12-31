@@ -8,6 +8,7 @@ const stageLine = el("stageLine");
 const dealerLine = el("dealerLine");
 const turnLine = el("turnLine");
 const scoreLine = el("scoreLine");
+const matchLine = el("matchLine");
 const cribLine = el("cribLine");
 
 const handTitle = el("handTitle");
@@ -38,11 +39,15 @@ const countNum = el("countNum");
 const peggingStatus = el("peggingStatus");
 const lastScore = el("lastScore");
 
-const p1Peg = el("p1Peg");
-const p2Peg = el("p2Peg");
+const boardSvg = el("boardSvg");
 const p1Label = el("p1Label");
 const p2Label = el("p2Label");
-const ticks = el("ticks");
+
+const gameOverModal = el("gameOverModal");
+const winnerLine = el("winnerLine");
+const finalLine = el("finalLine");
+const newGameBtn = el("newGameBtn");
+const newMatchBtn = el("newMatchBtn");
 
 const qs = new URLSearchParams(location.search);
 const tableId = (qs.get("table") || "JIM1").toString().trim();
@@ -50,6 +55,8 @@ const name = (qs.get("name") || "").toString().trim().slice(0, 16);
 
 let state = null;
 let selectedForDiscard = new Set();
+
+// ---------- Cards ----------
 
 function suitClass(suit) {
   return (suit === "♥" || suit === "♦") ? "red" : "black";
@@ -89,48 +96,138 @@ function cardValue(rank) {
 
 function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
 
-function initTicks() {
-  ticks.innerHTML = "";
-  const marks = [0, 30, 60, 90, 121];
-  for (const m of marks) {
-    const span = document.createElement("span");
-    span.textContent = m.toString();
-    ticks.appendChild(span);
-  }
+// ---------- SVG Board (Option B) ----------
+
+let boardInitialized = false;
+let pegP1 = null;
+let pegP2 = null;
+
+function svgEl(tag) {
+  return document.createElementNS("http://www.w3.org/2000/svg", tag);
 }
 
-function setPegPosition(pegEl, score) {
-  // lane width is 100%; map 0..121 -> 0..100%
+function scoreToX(score) {
+  // track from x=80..880 (800px usable)
   const s = clamp(score, 0, 121);
-  const pct = (s / 121) * 100;
-  pegEl.style.left = `${pct}%`;
+  return 80 + (s / 121) * 800;
+}
+
+function initBoardSvg() {
+  if (boardInitialized) return;
+  boardInitialized = true;
+
+  boardSvg.innerHTML = "";
+
+  // Background plate
+  const plate = svgEl("rect");
+  plate.setAttribute("x", "20");
+  plate.setAttribute("y", "20");
+  plate.setAttribute("width", "920");
+  plate.setAttribute("height", "180");
+  plate.setAttribute("rx", "28");
+  plate.setAttribute("class", "boardPlate");
+  boardSvg.appendChild(plate);
+
+  // Title engraving
+  const title = svgEl("text");
+  title.setAttribute("x", "480");
+  title.setAttribute("y", "55");
+  title.setAttribute("text-anchor", "middle");
+  title.setAttribute("class", "boardEngrave");
+  title.textContent = "PIRATE CRIBBAGE • 0 → 121";
+  boardSvg.appendChild(title);
+
+  // Tracks
+  const track1 = svgEl("rect");
+  track1.setAttribute("x", "80");
+  track1.setAttribute("y", "80");
+  track1.setAttribute("width", "800");
+  track1.setAttribute("height", "40");
+  track1.setAttribute("rx", "20");
+  track1.setAttribute("class", "track track1");
+  boardSvg.appendChild(track1);
+
+  const track2 = svgEl("rect");
+  track2.setAttribute("x", "80");
+  track2.setAttribute("y", "140");
+  track2.setAttribute("width", "800");
+  track2.setAttribute("height", "40");
+  track2.setAttribute("rx", "20");
+  track2.setAttribute("class", "track track2");
+  boardSvg.appendChild(track2);
+
+  // Tick marks
+  const ticksGroup = svgEl("g");
+  ticksGroup.setAttribute("class", "ticks");
+  boardSvg.appendChild(ticksGroup);
+
+  for (let i = 0; i <= 121; i++) {
+    const x = scoreToX(i);
+    const isMajor = (i % 5 === 0) || (i === 121);
+
+    const tick = svgEl("line");
+    tick.setAttribute("x1", String(x));
+    tick.setAttribute("x2", String(x));
+    tick.setAttribute("y1", "75");
+    tick.setAttribute("y2", isMajor ? "185" : "175");
+    tick.setAttribute("class", isMajor ? "tick major" : "tick minor");
+    ticksGroup.appendChild(tick);
+
+    if (isMajor && (i % 10 === 0 || i === 121)) {
+      const lbl = svgEl("text");
+      lbl.setAttribute("x", String(x));
+      lbl.setAttribute("y", "200");
+      lbl.setAttribute("text-anchor", "middle");
+      lbl.setAttribute("class", "tickLabel");
+      lbl.textContent = String(i);
+      ticksGroup.appendChild(lbl);
+    }
+  }
+
+  // Pegs
+  pegP1 = svgEl("circle");
+  pegP1.setAttribute("r", "12");
+  pegP1.setAttribute("cy", "100");
+  pegP1.setAttribute("class", "peg p1");
+  boardSvg.appendChild(pegP1);
+
+  pegP2 = svgEl("circle");
+  pegP2.setAttribute("r", "12");
+  pegP2.setAttribute("cy", "160");
+  pegP2.setAttribute("class", "peg p2");
+  boardSvg.appendChild(pegP2);
+
+  // Start positions
+  pegP1.setAttribute("cx", String(scoreToX(0)));
+  pegP2.setAttribute("cx", String(scoreToX(0)));
 }
 
 function renderBoard() {
   if (!state) return;
+  initBoardSvg();
 
   p1Label.textContent = state.players.PLAYER1 ? `P1 (${state.players.PLAYER1})` : "P1";
   p2Label.textContent = state.players.PLAYER2 ? `P2 (${state.players.PLAYER2})` : "P2";
 
-  setPegPosition(p1Peg, state.scores.PLAYER1);
-  setPegPosition(p2Peg, state.scores.PLAYER2);
+  const s1 = state.scores?.PLAYER1 ?? 0;
+  const s2 = state.scores?.PLAYER2 ?? 0;
+
+  pegP1.setAttribute("cx", String(scoreToX(s1)));
+  pegP2.setAttribute("cx", String(scoreToX(s2)));
 }
+
+// ---------- Pegging HUD ----------
 
 function renderPileAndHud() {
   if (!state) return;
 
   countNum.textContent = String(state.peg?.count ?? 0);
 
-  // pile cards
   pileArea.innerHTML = "";
   const pile = state.peg?.pile || [];
-  // show all cards in current sequence; if it gets long, only show last 10
   const show = pile.length > 10 ? pile.slice(pile.length - 10) : pile;
-  for (const c of show) {
-    pileArea.appendChild(makeCardButton(c, { disabled: true }));
-  }
+  for (const c of show) pileArea.appendChild(makeCardButton(c, { disabled: true }));
 
-  // status line
   if (state.stage !== "pegging") {
     peggingStatus.textContent = "Pegging info appears during the pegging phase.";
     lastScore.classList.add("hidden");
@@ -144,7 +241,6 @@ function renderPileAndHud() {
   peggingStatus.textContent =
     `${myTurn ? "Your turn" : "Opponent's turn"} • You have ${mine} card(s) • Opponent has ${opp} card(s).`;
 
-  // last score callout
   const ev = state.lastPegEvent;
   if (ev && ev.pts && ev.pts > 0) {
     const who = (ev.player === state.me) ? "You" : "Opponent";
@@ -155,6 +251,8 @@ function renderPileAndHud() {
     lastScore.classList.add("hidden");
   }
 }
+
+// ---------- Show scoring panel ----------
 
 function renderBreakdown(listEl, breakdown) {
   listEl.innerHTML = "";
@@ -202,17 +300,42 @@ function renderShow() {
   for (const c of de.cards) dCards.appendChild(makeCardButton(c, { disabled: true }));
   dCards.appendChild(makeCardButton(cut, { disabled: true }));
 
-  for (const c of cr.cards) cCards.appendChild(makeCardButton(c, { disabled: true }));
-  cCards.appendChild(makeCardButton(cut, { disabled: true }));
+  if (cr && cr.cards) {
+    for (const c of cr.cards) cCards.appendChild(makeCardButton(c, { disabled: true }));
+    cCards.appendChild(makeCardButton(cut, { disabled: true }));
+  }
 
   renderBreakdown(ndBreak, nd.breakdown);
   renderBreakdown(dBreak, de.breakdown);
-  renderBreakdown(cBreak, cr.breakdown);
+  renderBreakdown(cBreak, cr?.breakdown);
 
   ndTotal.textContent = `Total: ${nd.breakdown.total}`;
   dTotal.textContent = `Total: ${de.breakdown.total}`;
-  cTotal.textContent = `Total: ${cr.breakdown.total}`;
+  cTotal.textContent = `Total: ${cr?.breakdown?.total ?? 0}`;
 }
+
+// ---------- Game Over Modal ----------
+
+function renderGameOver() {
+  if (!state) return;
+
+  if (state.stage !== "gameover" || !state.gameOver) {
+    gameOverModal.classList.add("hidden");
+    gameOverModal.setAttribute("aria-hidden", "true");
+    return;
+  }
+
+  const w = state.gameOver.winner;
+  const winnerName = (w === "PLAYER1" ? (state.players.PLAYER1 || "P1") : (state.players.PLAYER2 || "P2"));
+
+  winnerLine.textContent = `${winnerName} wins! (${state.gameOver.reason})`;
+  finalLine.textContent = `Final: P1 ${state.gameOver.scores.PLAYER1} • P2 ${state.gameOver.scores.PLAYER2}  |  Match: P1 ${state.gameOver.matchWins.PLAYER1} – P2 ${state.gameOver.matchWins.PLAYER2}`;
+
+  gameOverModal.classList.remove("hidden");
+  gameOverModal.setAttribute("aria-hidden", "false");
+}
+
+// ---------- Main render ----------
 
 function render() {
   if (!state) return;
@@ -226,23 +349,36 @@ function render() {
 
   stageLine.textContent = `Stage: ${state.stage}`;
   dealerLine.textContent = `Dealer: ${state.dealer}`;
-  turnLine.textContent = `Turn: ${state.turn}`;
-  scoreLine.textContent = `Score: P1=${state.scores.PLAYER1} | P2=${state.scores.PLAYER2}`;
+  turnLine.textContent = `Turn: ${state.turn ?? "—"}`;
+
+  const win = state.winScore ?? 121;
+  scoreLine.textContent = `Game: P1=${state.scores.PLAYER1}/${win} | P2=${state.scores.PLAYER2}/${win}`;
+
+  const mw = state.matchWins || { PLAYER1: 0, PLAYER2: 0 };
+  matchLine.textContent = `Match: P1 ${mw.PLAYER1} – P2 ${mw.PLAYER2}`;
 
   cribLine.textContent = `Crib cards: ${state.cribCount} | Discards: P1=${state.discardsCount.PLAYER1}/2 P2=${state.discardsCount.PLAYER2}/2`;
   logArea.textContent = (state.log || []).join("\n");
 
-  initTicks();
   renderBoard();
   renderPileAndHud();
   renderShow();
+  renderGameOver();
 
-  // reset buttons
+  // reset buttons + hand
   discardBtn.style.display = "none";
   goBtn.style.display = "none";
   nextHandBtn.style.display = "none";
   discardBtn.disabled = true;
   handArea.innerHTML = "";
+
+  // gameover: no actions except modal buttons
+  if (state.stage === "gameover") {
+    handTitle.textContent = "Game Over";
+    handHelp.textContent = "Start the next game (match score will carry), or reset the whole match.";
+    showPanel.classList.add("hidden");
+    return;
+  }
 
   if (state.stage === "lobby") {
     handTitle.textContent = "Waiting for players…";
@@ -303,7 +439,6 @@ function render() {
       handArea.appendChild(btn);
     });
 
-    // GO button only if it's your turn, you have cards, and none playable.
     const canPlay = myHand.some(c => count + cardValue(c.rank) <= 31);
     if (myTurn && myHand.length > 0 && !canPlay) {
       goBtn.style.display = "inline-block";
@@ -325,6 +460,11 @@ function render() {
   }
 }
 
+// ---------- Wire up modal buttons ----------
+newGameBtn.onclick = () => socket.emit("new_game");
+newMatchBtn.onclick = () => socket.emit("new_match");
+
+// ---------- Socket ----------
 socket.on("connect", () => {
   socket.emit("join_table", { tableId, name });
 });
