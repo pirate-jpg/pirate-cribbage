@@ -175,6 +175,32 @@
     </section>
   </main>
 
+  <!-- NAME MODAL -->
+  <div id="nameModal" class="modalOverlay hidden">
+    <div class="modalCard woodFrame">
+      <div class="modalHeader">
+        <div class="modalIcon">⚓</div>
+        <div>
+          <div class="modalTitle">Join the Crew</div>
+          <div class="modalSubtitle">Choose yer pirate name to set sail.</div>
+        </div>
+      </div>
+
+      <div class="modalBody">
+        <label class="modalLabel" for="nameInput">Pirate Name</label>
+        <input id="nameInput" class="modalInput" maxlength="16" placeholder="e.g., Captain Greenerbeard" />
+
+        <div class="modalHint">
+          Tip: Open an incognito window for Player 2 and pick another name.
+        </div>
+      </div>
+
+      <div class="modalActions">
+        <button id="nameJoinBtn" class="btn primary big">Set Sail</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/app.js"></script>
 </body>
