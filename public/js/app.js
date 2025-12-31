@@ -1,121 +1,192 @@
 const socket = io();
 
+const qs = new URLSearchParams(location.search);
+const tableId = (qs.get("table") || "JIM1").toString();
+const name = (qs.get("name") || "").toString();
+
 const el = (id) => document.getElementById(id);
-const log = (msg) => { el("log").textContent += msg + "\n"; };
 
-let ROOM = null;
-let YOU = null;
-let YOU_NAME = null;
-let myHand = [];
+const tableLine = el("tableLine");
+const meLine = el("meLine");
+const playersLine = el("playersLine");
+const stageLine = el("stageLine");
+const dealerLine = el("dealerLine");
+const turnLine = el("turnLine");
+const scoreLine = el("scoreLine");
+const pegLine = el("pegLine");
+const cribLine = el("cribLine");
 
-socket.on("hello", (data) => log(data.msg));
-socket.on("err", (m) => el("err").textContent = m);
+const handTitle = el("handTitle");
+const handHelp = el("handHelp");
+const handArea = el("handArea");
 
-socket.on("room:joined", ({ code, you }) => {
-  ROOM = code;
-  YOU = you;
-  el("tableCode").textContent = ROOM;
-  el("youName").textContent = YOU_NAME;
-  el("joinPanel").classList.add("hidden");
-  el("gamePanel").classList.remove("hidden");
-  el("err").textContent = "";
-  log(`Joined table ${ROOM}`);
-});
+const discardBtn = el("discardBtn");
+const goBtn = el("goBtn");
+const nextHandBtn = el("nextHandBtn");
 
-socket.on("room:update", (state) => {
-  if (!ROOM) return;
+const logArea = el("logArea");
 
-  const players = state.players.map(p => `${p.name}${p.id === state.dealerId ? " (dealer)" : ""}`).join(", ");
-  el("roomState").textContent =
-    `Players: ${players} | Stage: ${state.stage} | Crib cards: ${state.cribCount}`;
+let state = null;
+let me = null;
+let selectedForDiscard = new Set();
 
-  // show scores if present
-  const myScore = state.scores?.[YOU] ?? 0;
-  el("discardNote").textContent = `Your score: ${myScore}`;
-});
+function cardValue(rank) {
+  if (rank === "A") return 1;
+  if (["K","Q","J"].includes(rank)) return 10;
+  return parseInt(rank, 10);
+}
 
-socket.on("hand:dealt", (hand) => {
-  myHand = hand;
-  renderHand();
-  el("revealPanel").classList.add("hidden");
-});
+function render() {
+  if (!state) return;
 
-socket.on("hand:reveal", (data) => {
-  el("revealPanel").classList.remove("hidden");
+  tableLine.textContent = `Table: ${state.tableId}`;
+  meLine.textContent = `You: ${state.me}`;
 
-  el("starter").textContent = data.starter.id;
+  const p1 = state.players.PLAYER1 ? state.players.PLAYER1 : "—";
+  const p2 = state.players.PLAYER2 ? state.players.PLAYER2 : "—";
+  playersLine.textContent = `Players: P1=${p1} | P2=${p2}`;
 
-  // pretty output
-  const names = {};
-  // try to infer names from DOM roomState text? skip; just show IDs shortened
-  const short = (id) => (id || "").slice(0, 6);
+  stageLine.textContent = `Stage: ${state.stage}`;
+  dealerLine.textContent = `Dealer: ${state.dealer}`;
+  turnLine.textContent = `Turn: ${state.turn}`;
+  scoreLine.textContent = `Score: P1=${state.scores.PLAYER1} | P2=${state.scores.PLAYER2}`;
 
-  const dealerId = data.dealerId;
-  const otherId = Object.keys(data.hands).find(k => k !== dealerId);
+  pegLine.textContent = `Peg Count: ${state.peg.count} | Pile: ${state.peg.pile.map(c => `${c.rank}${c.suit}`).join(" ")}`;
+  cribLine.textContent = `Crib cards: ${state.cribCount} | Discards: P1=${state.discardsCount.PLAYER1}/2 P2=${state.discardsCount.PLAYER2}/2`;
 
-  const handsTxt =
-`Dealer (${short(dealerId)}):
-${data.hands[dealerId].map(c=>c.id).join(" ")}
+  logArea.textContent = (state.log || []).join("\n");
 
-Non-dealer (${short(otherId)}):
-${data.hands[otherId].map(c=>c.id).join(" ")}`;
+  // stage-specific UI
+  discardBtn.style.display = "none";
+  goBtn.style.display = "none";
+  nextHandBtn.style.display = "none";
+  discardBtn.disabled = true;
 
-  el("handsOut").textContent = handsTxt;
-  el("cribOut").textContent = data.crib.map(c=>c.id).join(" ");
+  handArea.innerHTML = "";
 
-  const ptsTxt =
-`Dealer hand: ${data.points[dealerId]} pts
-Non-dealer hand: ${data.points[otherId]} pts
-Crib (dealer): ${data.points.crib} pts`;
+  if (state.stage === "lobby") {
+    handTitle.textContent = "Waiting for players…";
+    handHelp.textContent = "Open this same URL in another window/incognito to join as PLAYER2.";
+    return;
+  }
 
-  el("pointsOut").textContent = ptsTxt;
+  if (state.stage === "discard") {
+    handTitle.textContent = "Your Hand";
+    handHelp.textContent = "Click 2 cards to discard to the crib.";
 
-  const scoresTxt =
-`Dealer (${short(dealerId)}): ${data.scores[dealerId]}
-Non-dealer (${short(otherId)}): ${data.scores[otherId]}`;
+    renderDiscardHand();
+    discardBtn.style.display = "inline-block";
+    discardBtn.disabled = selectedForDiscard.size !== 2;
+    return;
+  }
 
-  el("scoresOut").textContent = scoresTxt;
+  if (state.stage === "pegging") {
+    handTitle.textContent = "Pegging";
+    handHelp.textContent = "Play a card without exceeding 31. If you can't play, press GO.";
 
-  log("Hand scored. Click Next Hand to continue.");
-});
+    renderPeggingHand();
+    return;
+  }
 
-function renderHand() {
-  const handDiv = el("hand");
-  handDiv.innerHTML = "";
+  if (state.stage === "show") {
+    handTitle.textContent = "Show / Scoring";
+    handHelp.textContent = `Cut card: ${state.cut ? state.cut.rank + state.cut.suit : "—"}  •  Click Next Hand to deal again.`;
+    renderShowHand();
+    nextHandBtn.style.display = "inline-block";
+    nextHandBtn.onclick = () => socket.emit("next_hand");
+    return;
+  }
+}
 
-  myHand.forEach((c) => {
-    const b = document.createElement("button");
-    b.className = "cardbtn";
-    b.textContent = c.id;
-    b.onclick = () => discard(c.id);
-    handDiv.appendChild(b);
+function makeCardButton(card, opts = {}) {
+  const btn = document.createElement("button");
+  btn.className = "cardBtn";
+  btn.textContent = `${card.rank}${card.suit}`;
+  if (opts.selected) btn.classList.add("selected");
+  if (opts.disabled) btn.disabled = true;
+  if (opts.onClick) btn.onclick = opts.onClick;
+  return btn;
+}
+
+function renderDiscardHand() {
+  // In discard stage, state.myHand is still 6 until you discard
+  const myHand = state.myHand || [];
+
+  myHand.forEach(card => {
+    const selected = selectedForDiscard.has(card.id);
+    const btn = makeCardButton(card, {
+      selected,
+      onClick: () => {
+        if (selected) selectedForDiscard.delete(card.id);
+        else {
+          if (selectedForDiscard.size >= 2) return;
+          selectedForDiscard.add(card.id);
+        }
+        discardBtn.disabled = selectedForDiscard.size !== 2;
+        render(); // refresh selection visuals
+      }
+    });
+    handArea.appendChild(btn);
   });
 
-  if (myHand.length === 6) el("discardNote").textContent = "Discard 2 cards to the crib.";
-  if (myHand.length === 5) el("discardNote").textContent = "Discard 1 more card to the crib.";
-  if (myHand.length === 4) el("discardNote").textContent = "Waiting for the other player…";
+  discardBtn.onclick = () => {
+    if (selectedForDiscard.size !== 2) return;
+    socket.emit("discard_to_crib", { cardIds: Array.from(selectedForDiscard) });
+    selectedForDiscard.clear();
+    discardBtn.disabled = true;
+  };
 }
 
-function discard(cardId) {
-  if (!ROOM) return;
-  socket.emit("hand:discard", { code: ROOM, cardId });
+function renderPeggingHand() {
+  const myTurn = state.turn === state.me;
+  const myHand = state.myHand || [];
+  const count = state.peg.count;
+
+  myHand.forEach(card => {
+    const playable = myTurn && (count + cardValue(card.rank) <= 31);
+    const btn = makeCardButton(card, {
+      disabled: !playable,
+      onClick: () => socket.emit("play_card", { cardId: card.id })
+    });
+    handArea.appendChild(btn);
+  });
+
+  const canPlay = myHand.some(c => (count + cardValue(c.rank) <= 31));
+  if (myTurn && !canPlay) {
+    goBtn.style.display = "inline-block";
+    goBtn.onclick = () => socket.emit("go");
+  }
 }
 
-el("joinBtn").onclick = () => {
-  const code = el("code").value.trim().toUpperCase();
-  const name = el("name").value.trim() || "Pirate";
-  YOU_NAME = name;
-  el("err").textContent = "";
-  socket.emit("room:join", { code, name });
-};
+function renderShowHand() {
+  // show your 4-card hand
+  const myHand = state.myHand || [];
+  myHand.forEach(card => {
+    const btn = makeCardButton(card, { disabled: true });
+    handArea.appendChild(btn);
+  });
 
-el("pingBtn").onclick = () => {
-  socket.emit("ping");
-  log("Ping sent to server");
-};
-socket.on("pong", (data) => log(data.msg));
+  // also show cut card as disabled
+  if (state.cut) {
+    const cutBtn = makeCardButton(state.cut, { disabled: true });
+    cutBtn.style.opacity = "0.9";
+    handArea.appendChild(cutBtn);
+  }
+}
 
-el("nextHandBtn").onclick = () => {
-  socket.emit("hand:next", { code: ROOM });
-  log("Next hand requested");
-};
+socket.on("connect", () => {
+  // If user didn't provide a name param, set a friendly default (doesn't matter)
+  socket.emit("join_table", { tableId, name });
+});
+
+socket.on("hello", (data) => {
+  // optional; state log already shows stuff
+});
+
+socket.on("state", (s) => {
+  state = s;
+  me = s.me;
+  render();
+});
+
+socket.on("error_msg", (msg) => alert(msg));
