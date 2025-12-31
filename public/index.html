@@ -31,22 +31,24 @@
   <p>The seas are alive…</p>
   <button onclick="ping()">Ping Server</button>
   <div id="log"></div>
+ <script src="/socket.io/socket.io.js"></script>
+<script>
+  const log = msg => {
+    document.getElementById("log").textContent += msg + "\n";
+  };
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const log = msg => {
-      document.getElementById("log").textContent += msg + "\n";
-    };
+  const socket = io();
 
-    const socket = io();
-    socket.on("connect", () => log("Connected to server"));
-    socket.on("hello", data => log(data.msg));
+  socket.on("connect", () => {
+    log("Connected to server");
+  });
 
-    function ping() {
-      log("🏴‍☠️ Ahoy! Button clicked.");
-    }
-  </script>
-  <script src="/js/app.js"></script>
-</body>
-</html>
+  socket.on("hello", data => {
+    log(data.msg);
+  });
 
+  function ping() {
+    socket.emit("ping");
+    log("Ping sent to server");
+  }
+</script>
