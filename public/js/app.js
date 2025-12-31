@@ -25,6 +25,7 @@ const showPanel = el("showPanel");
 const cutLine = el("cutLine");
 const ndTitle = el("ndTitle");
 const dTitle = el("dTitle");
+const cribTitle = el("cribTitle");
 const ndCards = el("ndCards");
 const dCards = el("dCards");
 const cCards = el("cCards");
@@ -53,7 +54,19 @@ const p2Wins = el("p2Wins");
 
 const qs = new URLSearchParams(location.search);
 const tableId = (qs.get("table") || "JIM1").toString().trim();
-const name = (qs.get("name") || "").toString().trim().slice(0, 16);
+
+// Prompt for name if not provided in URL
+let name = (qs.get("name") || "").toString().trim().slice(0, 16);
+if (!name) {
+  const entered = (prompt("Enter your pirate name:", "") || "").toString().trim();
+  name = entered.slice(0, 16);
+  // optional: update the URL so refresh keeps it
+  if (name) {
+    qs.set("name", name);
+    const newUrl = `${location.pathname}?${qs.toString()}`;
+    history.replaceState(null, "", newUrl);
+  }
+}
 
 let state = null;
 let selectedForDiscard = new Set();
@@ -143,6 +156,7 @@ function renderMatchPips() {
     const a = document.createElement("div");
     a.className = "pip" + (i < w1 ? " on" : "");
     p1Wins.appendChild(a);
+
     const b = document.createElement("div");
     b.className = "pip" + (i < w2 ? " on" : "");
     p2Wins.appendChild(b);
@@ -200,6 +214,12 @@ function renderBreakdown(listEl, breakdown) {
   }
 }
 
+function displayNameFor(playerId) {
+  if (!state) return playerId;
+  // state.players maps PLAYER1->name, PLAYER2->name
+  return state.players?.[playerId] || playerId;
+}
+
 function renderShow() {
   if (!state || state.stage !== "show" || !state.show) {
     showPanel.classList.add("hidden");
@@ -214,8 +234,11 @@ function renderShow() {
   const nonDealer = state.show.nonDealer;
   const dealer = state.show.dealer;
 
-  ndTitle.textContent = `Non-dealer (${nonDealer})`;
-  dTitle.textContent = `Dealer (${dealer})`;
+  ndTitle.textContent = `Non-dealer (${displayNameFor(nonDealer)})`;
+  dTitle.textContent = `Dealer (${displayNameFor(dealer)})`;
+
+  // ✅ Crib owner label
+  if (cribTitle) cribTitle.textContent = `Crib (${displayNameFor(dealer)})`;
 
   ndCards.innerHTML = "";
   dCards.innerHTML = "";
@@ -256,7 +279,7 @@ function renderGameOver() {
   if (state.matchOver) {
     const w = state.matchWinner;
     handTitle.textContent = "🏴‍☠️ Match Over!";
-    handHelp.textContent = w ? `${w} wins the match. Final game: P1=${p1} • P2=${p2}` : `Match ended. Final game: P1=${p1} • P2=${p2}`;
+    handHelp.textContent = w ? `${displayNameFor(w)} wins the match. Final game: P1=${p1} • P2=${p2}` : `Match ended. Final game: P1=${p1} • P2=${p2}`;
     nextGameBtn.style.display = "none";
     nextHandBtn.style.display = "none";
     return true;
@@ -264,7 +287,7 @@ function renderGameOver() {
 
   const w = state.winner;
   handTitle.textContent = "🏁 Game Over!";
-  handHelp.textContent = w ? `${w} wins. Final score: P1=${p1} • P2=${p2}` : `Tie game. Final score: P1=${p1} • P2=${p2}`;
+  handHelp.textContent = w ? `${displayNameFor(w)} wins. Final score: P1=${p1} • P2=${p2}` : `Tie game. Final score: P1=${p1} • P2=${p2}`;
 
   nextGameBtn.style.display = "inline-block";
   nextGameBtn.onclick = () => socket.emit("next_game");
@@ -284,8 +307,8 @@ function render() {
   playersLine.textContent = `Crew: P1=${p1} | P2=${p2}`;
 
   stageLine.textContent = `Stage: ${state.stage}`;
-  dealerLine.textContent = `Dealer: ${state.dealer}`;
-  turnLine.textContent = `Turn: ${state.turn}`;
+  dealerLine.textContent = `Dealer: ${displayNameFor(state.dealer)}`;
+  turnLine.textContent = `Turn: ${displayNameFor(state.turn)}`;
 
   scoreLine.textContent = `P1 ${state.scores.PLAYER1}/${state.gameTarget || 121} • P2 ${state.scores.PLAYER2}/${state.gameTarget || 121}`;
   cribLine.textContent = `Crib: ${state.cribCount} | Discards: P1=${state.discardsCount.PLAYER1}/2 P2=${state.discardsCount.PLAYER2}/2`;
@@ -298,19 +321,14 @@ function render() {
   renderPileAndHud();
   renderShow();
 
-  // buttons reset
   discardBtn.style.display = "none";
   goBtn.style.display = "none";
   nextHandBtn.style.display = "none";
   nextGameBtn.style.display = "none";
   discardBtn.disabled = true;
 
-  // New match always available
-  if (newMatchBtn) {
-    newMatchBtn.onclick = () => socket.emit("new_match");
-  }
+  if (newMatchBtn) newMatchBtn.onclick = () => socket.emit("new_match");
 
-  // If game/match over, show that state and stop.
   if (renderGameOver()) return;
 
   if (state.stage === "lobby") {
@@ -360,7 +378,6 @@ function render() {
     handHelp.textContent = "Play a card without exceeding 31. If you can’t play, press GO.";
 
     handArea.innerHTML = "";
-
     const myTurn = state.turn === state.me;
     const myHand = state.myHand || [];
     const count = state.peg.count;
@@ -374,7 +391,6 @@ function render() {
       handArea.appendChild(btn);
     });
 
-    // GO only when it's your turn and you have cards and none can play.
     const canPlay = myHand.some(c => count + cardValue(c.rank) <= 31);
     if (myTurn && myHand.length > 0 && !canPlay) {
       goBtn.style.display = "inline-block";
