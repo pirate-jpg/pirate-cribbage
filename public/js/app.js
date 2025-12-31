@@ -64,35 +64,25 @@ function suitClass(suit) {
 
 function makeCardButton(card, opts = {}) {
   const btn = document.createElement("button");
-
-  // IMPORTANT: this must match CSS
   btn.className = `cardBtn ${suitClass(card.suit)}`;
-
   if (opts.selected) btn.classList.add("selected");
   if (opts.disabled) btn.disabled = true;
 
-  // If card is missing data, still show something
-  const rank = card.rank ?? "?";
-  const suit = card.suit ?? "?";
-
   const corner1 = document.createElement("div");
   corner1.className = "corner";
-  corner1.textContent = rank;
+  corner1.textContent = card.rank;
 
   const big = document.createElement("div");
   big.className = "suitBig";
-  big.textContent = suit;
+  big.textContent = card.suit;
 
   const corner2 = document.createElement("div");
   corner2.className = "corner bottom";
-  corner2.textContent = rank;
+  corner2.textContent = card.rank;
 
   btn.appendChild(corner1);
   btn.appendChild(big);
   btn.appendChild(corner2);
-
-  // fallback text (helps if CSS fails)
-  btn.setAttribute("aria-label", `${rank}${suit}`);
 
   if (opts.onClick) btn.onclick = opts.onClick;
   return btn;
@@ -117,46 +107,59 @@ function initTicks() {
 }
 
 function setPegPosition(pegEl, score) {
-  const s = clamp(score, 0, 121);
-  const pct = (s / 121) * 100;
+  const target = (state && state.gameTarget) ? state.gameTarget : 121;
+  const s = clamp(score, 0, target);
+  const pct = (s / target) * 100;
   pegEl.style.left = `${pct}%`;
 }
 
-function renderMatch() {
-  const p1 = state.players.PLAYER1 || "—";
-  const p2 = state.players.PLAYER2 || "—";
-  p1Name.textContent = `P1 (${p1})`;
-  p2Name.textContent = `P2 (${p2})`;
-
-  const target = state.matchTargetWins || 3;
-
-  const fillPips = (wrap, wins) => {
-    wrap.innerHTML = "";
-    for (let i = 0; i < target; i++) {
-      const pip = document.createElement("span");
-      pip.className = "pip" + (i < wins ? " on" : "");
-      wrap.appendChild(pip);
-    }
-  };
-
-  fillPips(p1Wins, state.matchWins?.PLAYER1 ?? 0);
-  fillPips(p2Wins, state.matchWins?.PLAYER2 ?? 0);
-}
-
 function renderBoard() {
+  if (!state) return;
+
   p1Label.textContent = state.players.PLAYER1 ? `P1 (${state.players.PLAYER1})` : "P1";
   p2Label.textContent = state.players.PLAYER2 ? `P2 (${state.players.PLAYER2})` : "P2";
+
   setPegPosition(p1Peg, state.scores.PLAYER1);
   setPegPosition(p2Peg, state.scores.PLAYER2);
 }
 
+function renderMatchPips() {
+  if (!state) return;
+
+  const p1 = state.players.PLAYER1 || "P1";
+  const p2 = state.players.PLAYER2 || "P2";
+
+  p1Name.textContent = `P1 (${p1})`;
+  p2Name.textContent = `P2 (${p2})`;
+
+  const goal = state.matchTargetWins || 3;
+  const w1 = state.matchWins?.PLAYER1 ?? 0;
+  const w2 = state.matchWins?.PLAYER2 ?? 0;
+
+  p1Wins.innerHTML = "";
+  p2Wins.innerHTML = "";
+
+  for (let i=0;i<goal;i++){
+    const a = document.createElement("div");
+    a.className = "pip" + (i < w1 ? " on" : "");
+    p1Wins.appendChild(a);
+    const b = document.createElement("div");
+    b.className = "pip" + (i < w2 ? " on" : "");
+    p2Wins.appendChild(b);
+  }
+}
+
 function renderPileAndHud() {
+  if (!state) return;
+
   countNum.textContent = String(state.peg?.count ?? 0);
 
   pileArea.innerHTML = "";
   const pile = state.peg?.pile || [];
-  const show = pile.length > 12 ? pile.slice(pile.length - 12) : pile;
-  for (const c of show) pileArea.appendChild(makeCardButton(c, { disabled: true }));
+  const show = pile.length > 10 ? pile.slice(pile.length - 10) : pile;
+  for (const c of show) {
+    pileArea.appendChild(makeCardButton(c, { disabled: true }));
+  }
 
   if (state.stage !== "pegging") {
     peggingStatus.textContent = "Pegging info appears during the pegging phase.";
@@ -240,6 +243,36 @@ function renderShow() {
   cTotal.textContent = `Total: ${cr.breakdown.total}`;
 }
 
+function renderGameOver() {
+  if (!state) return false;
+  if (!state.gameOver && !state.matchOver) return false;
+
+  showPanel.classList.add("hidden");
+  handArea.innerHTML = "";
+
+  const p1 = state.scores.PLAYER1;
+  const p2 = state.scores.PLAYER2;
+
+  if (state.matchOver) {
+    const w = state.matchWinner;
+    handTitle.textContent = "🏴‍☠️ Match Over!";
+    handHelp.textContent = w ? `${w} wins the match. Final game: P1=${p1} • P2=${p2}` : `Match ended. Final game: P1=${p1} • P2=${p2}`;
+    nextGameBtn.style.display = "none";
+    nextHandBtn.style.display = "none";
+    return true;
+  }
+
+  const w = state.winner;
+  handTitle.textContent = "🏁 Game Over!";
+  handHelp.textContent = w ? `${w} wins. Final score: P1=${p1} • P2=${p2}` : `Tie game. Final score: P1=${p1} • P2=${p2}`;
+
+  nextGameBtn.style.display = "inline-block";
+  nextGameBtn.onclick = () => socket.emit("next_game");
+
+  nextHandBtn.style.display = "none";
+  return true;
+}
+
 function render() {
   if (!state) return;
 
@@ -253,32 +286,36 @@ function render() {
   stageLine.textContent = `Stage: ${state.stage}`;
   dealerLine.textContent = `Dealer: ${state.dealer}`;
   turnLine.textContent = `Turn: ${state.turn}`;
-  scoreLine.textContent = `P1 ${state.scores.PLAYER1}/${state.gameTarget} • P2 ${state.scores.PLAYER2}/${state.gameTarget}`;
 
+  scoreLine.textContent = `P1 ${state.scores.PLAYER1}/${state.gameTarget || 121} • P2 ${state.scores.PLAYER2}/${state.gameTarget || 121}`;
   cribLine.textContent = `Crib: ${state.cribCount} | Discards: P1=${state.discardsCount.PLAYER1}/2 P2=${state.discardsCount.PLAYER2}/2`;
+
   logArea.textContent = (state.log || []).join("\n");
 
   initTicks();
   renderBoard();
-  renderMatch();
+  renderMatchPips();
   renderPileAndHud();
   renderShow();
 
+  // buttons reset
   discardBtn.style.display = "none";
   goBtn.style.display = "none";
   nextHandBtn.style.display = "none";
   nextGameBtn.style.display = "none";
-
   discardBtn.disabled = true;
-  handArea.innerHTML = "";
 
-  // Controls
-  newMatchBtn.onclick = () => socket.emit("new_match");
+  // New match always available
+  if (newMatchBtn) {
+    newMatchBtn.onclick = () => socket.emit("new_match");
+  }
+
+  // If game/match over, show that state and stop.
+  if (renderGameOver()) return;
 
   if (state.stage === "lobby") {
     handTitle.textContent = "Waiting for crew…";
     handHelp.textContent = `Open another browser/incognito and join table "${state.tableId}".`;
-    showPanel.classList.add("hidden");
     return;
   }
 
@@ -287,6 +324,7 @@ function render() {
     handTitle.textContent = "Your Hand";
     handHelp.textContent = "Click 2 cards to discard to the crib.";
 
+    handArea.innerHTML = "";
     const myHand = state.myHand || [];
     myHand.forEach(card => {
       const selected = selectedForDiscard.has(card.id);
@@ -321,6 +359,8 @@ function render() {
     handTitle.textContent = "Pegging";
     handHelp.textContent = "Play a card without exceeding 31. If you can’t play, press GO.";
 
+    handArea.innerHTML = "";
+
     const myTurn = state.turn === state.me;
     const myHand = state.myHand || [];
     const count = state.peg.count;
@@ -334,6 +374,7 @@ function render() {
       handArea.appendChild(btn);
     });
 
+    // GO only when it's your turn and you have cards and none can play.
     const canPlay = myHand.some(c => count + cardValue(c.rank) <= 31);
     if (myTurn && myHand.length > 0 && !canPlay) {
       goBtn.style.display = "inline-block";
@@ -345,27 +386,14 @@ function render() {
   if (state.stage === "show") {
     handTitle.textContent = "Show";
     handHelp.textContent = "Scoring breakdown is shown below. Click Next Hand when ready.";
+
     nextHandBtn.style.display = "inline-block";
     nextHandBtn.onclick = () => socket.emit("next_hand");
 
+    handArea.innerHTML = "";
     const myHand = state.myHand || [];
     myHand.forEach(card => handArea.appendChild(makeCardButton(card, { disabled: true })));
     if (state.cut) handArea.appendChild(makeCardButton(state.cut, { disabled: true }));
-    return;
-  }
-
-  if (state.stage === "gameover") {
-    showPanel.classList.add("hidden");
-    handTitle.textContent = "🏁 Game Over";
-    const w = state.winner ? state.winner : "—";
-    handHelp.textContent = `${w} won this game. Match: P1=${state.matchWins.PLAYER1} • P2=${state.matchWins.PLAYER2}`;
-
-    if (!state.matchOver) {
-      nextGameBtn.style.display = "inline-block";
-      nextGameBtn.onclick = () => socket.emit("next_game");
-    } else {
-      handHelp.textContent += " • MATCH OVER";
-    }
     return;
   }
 }
