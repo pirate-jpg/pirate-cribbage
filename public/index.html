@@ -1,54 +1,74 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <link rel="stylesheet" href="/css/styles.css">
   <meta charset="UTF-8" />
   <title>🏴‍☠️ Pirate Cribbage</title>
-  <style>
-    body {
-      background: #0b1c2d;
-      color: #f5f5dc;
-      font-family: system-ui, sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-    }
-    button {
-      padding: 12px 20px;
-      font-size: 16px;
-      cursor: pointer;
-    }
-    #log {
-      margin-top: 20px;
-      white-space: pre-wrap;
-    }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
-  <h1>🏴‍☠️ Pirate Cribbage</h1>
-  <p>The seas are alive…</p>
-  <button onclick="ping()">Ping Server</button>
-  <div id="log"></div>
- <script src="/socket.io/socket.io.js"></script>
-<script>
-  const log = msg => {
-    document.getElementById("log").textContent += msg + "\n";
-  };
+  <div class="wrap">
+    <h1>🏴‍☠️ Pirate Cribbage</h1>
 
-  const socket = io();
+    <div id="joinPanel" class="card">
+      <div class="row">
+        <label>Table Code</label>
+        <input id="code" placeholder="ABCD" maxlength="8" />
+      </div>
+      <div class="row">
+        <label>Your Name</label>
+        <input id="name" placeholder="Jim" maxlength="20" />
+      </div>
+      <button id="joinBtn">Join Table</button>
+      <div id="err" class="err"></div>
+      <p class="hint">Open this same URL on another device/browser and join the same table code.</p>
+    </div>
 
-  socket.on("connect", () => {
-    log("Connected to server");
-  });
+    <div id="gamePanel" class="card hidden">
+      <div class="top">
+        <div><b>Table:</b> <span id="tableCode"></span></div>
+        <div><b>You:</b> <span id="youName"></span></div>
+      </div>
 
-  socket.on("hello", data => {
-    log(data.msg);
-  });
+      <div id="roomState" class="small"></div>
 
- function ping() {
-  socket.emit("ping");
-  log("Ping sent to server");
-}
-</script>
+      <h2>Your Hand <span class="small">(click 2 cards to discard to the crib)</span></h2>
+      <div id="hand" class="hand"></div>
+      <div id="discardNote" class="small"></div>
+
+      <div id="revealPanel" class="hidden">
+        <h2>Reveal</h2>
+        <div><b>Starter:</b> <span id="starter"></span></div>
+        <div class="grid2">
+          <div>
+            <h3>Hands</h3>
+            <pre id="handsOut"></pre>
+          </div>
+          <div>
+            <h3>Crib</h3>
+            <pre id="cribOut"></pre>
+          </div>
+        </div>
+        <div class="grid2">
+          <div>
+            <h3>Points This Hand</h3>
+            <pre id="pointsOut"></pre>
+          </div>
+          <div>
+            <h3>Total Scores</h3>
+            <pre id="scoresOut"></pre>
+          </div>
+        </div>
+        <button id="nextHandBtn">Next Hand</button>
+      </div>
+
+      <hr />
+      <button id="pingBtn" class="ghost">Ping Server</button>
+      <pre id="log" class="log"></pre>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
