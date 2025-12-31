@@ -3,6 +3,8 @@
 // - pegging run scoring
 // - emits pegging "lastEvent" for UI (points + reasons)
 // - auto-GO behavior when opponent has 0 cards left (no need to click GO repeatedly)
+// FIXES:
+// - prevents pegging stall when opponent has 0 cards and current player can't play (auto-award + reset)
 
 const path = require("path");
 const express = require("express");
@@ -86,7 +88,7 @@ function ensureTable(tableId) {
 
       scores: { PLAYER1: 0, PLAYER2: 0 },
 
-      show: null,       // show breakdown payload
+      show: null,         // show breakdown payload
       lastPegEvent: null, // { player, pts, reasons[] }
 
       log: []
@@ -256,6 +258,41 @@ function resetPegCount(t) {
   t.peg.lastPlayer = null;
   t.peg.go = { PLAYER1:false, PLAYER2:false };
   pushLog(t, `Count resets to 0.`);
+}
+
+/**
+ * Key fix:
+ * If opponent has 0 cards left, and current player cannot play at this count,
+ * we must auto-award last-card (if applicable), reset count to 0, and let
+ * the remaining player continue. This prevents the "stall at 27" screenshot.
+ */
+function autoSoloAdvance(t) {
+  if (t.stage !== "pegging") return;
+
+  const me = t.turn;
+  const opp = otherPlayer(me);
+
+  const oppLeft = (t.pegHands[opp]?.length || 0);
+  if (oppLeft > 0) return; // not solo situation
+
+  const meLeft = (t.pegHands[me]?.length || 0);
+
+  // If nobody has cards, end pegging
+  if (meLeft === 0) {
+    if (t.pegHands.PLAYER1.length === 0 && t.pegHands.PLAYER2.length === 0) {
+      awardLastCardIfNeeded(t);
+      scoreShowAndAdvance(t);
+    }
+    return;
+  }
+
+  // If I can't play and count > 0, end this sequence automatically
+  if (t.peg.count > 0 && !canPlayAny(t.pegHands[me], t.peg.count)) {
+    awardLastCardIfNeeded(t);
+    resetPegCount(t);
+    t.turn = me; // stay on the only player with cards
+    pushLog(t, `Solo play: opponent out of cards; ${me} continues at 0.`);
+  }
 }
 
 /** -------------------------
@@ -486,18 +523,21 @@ io.on("connection", (socket) => {
     const pts = pegPointsAfterPlay(t, me, card);
     if (pts) t.scores[me] += pts;
 
+    const opp = otherPlayer(me);
+
     // handle 31
     if (t.peg.count === 31) {
       resetPegCount(t);
-      t.turn = otherPlayer(me);
+      // normally opponent leads after 31, BUT if opponent has 0 cards, keep it with me
+      t.turn = ((t.pegHands[opp]?.length || 0) === 0) ? me : opp;
       pushLog(t, `${t.turn} to play.`);
+      autoSoloAdvance(t);
       return emitState(socket.tableId);
     }
 
     // normal turn passes… BUT if opponent has 0 cards left, keep the turn with the same player
-    const opp = otherPlayer(me);
     if ((t.pegHands[opp]?.length || 0) === 0) {
-      t.turn = me; // opponent is out; you keep playing if possible
+      t.turn = me;
     } else {
       t.turn = opp;
     }
@@ -506,7 +546,11 @@ io.on("connection", (socket) => {
     if (t.pegHands.PLAYER1.length === 0 && t.pegHands.PLAYER2.length === 0) {
       awardLastCardIfNeeded(t);
       scoreShowAndAdvance(t);
+      return emitState(socket.tableId);
     }
+
+    // crucial: if opponent is out of cards, and I can't play, auto-end the count/reset to 0
+    autoSoloAdvance(t);
 
     emitState(socket.tableId);
   });
@@ -518,9 +562,13 @@ io.on("connection", (socket) => {
     const me = socket.playerId;
     if (!me || t.turn !== me) return;
 
-    // if opponent has 0 cards, GO is pointless — just ignore
     const opp = otherPlayer(me);
-    if ((t.pegHands[opp]?.length || 0) === 0) return;
+
+    // If opponent has 0 cards, GO isn't a user action — but we MUST still prevent stalls.
+    if ((t.pegHands[opp]?.length || 0) === 0) {
+      autoSoloAdvance(t);
+      return emitState(socket.tableId);
+    }
 
     if (canPlayAny(t.pegHands[me], t.peg.count)) return;
 
