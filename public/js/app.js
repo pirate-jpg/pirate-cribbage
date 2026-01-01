@@ -1,26 +1,32 @@
+let socket = null;
 const el = (id) => document.getElementById(id);
 
-let socket = null;
-let state = null;
-let selectedForDiscard = new Set();
-
-// overlay
-const joinOverlay = el("joinOverlay");
-const nameInput = el("nameInput");
-const tableInput = el("tableInput");
-const nameJoinBtn = el("nameJoinBtn");
-
-// header/meta
+// Top meta
 const tableLine = el("tableLine");
 const meLine = el("meLine");
+
+// Crew panel
 const playersLine = el("playersLine");
 const stageLine = el("stageLine");
 const dealerLine = el("dealerLine");
 const turnLine = el("turnLine");
 const scoreLine = el("scoreLine");
 const cribLine = el("cribLine");
+const newMatchBtn = el("newMatchBtn");
 
-// gameplay
+const p1Name = el("p1Name");
+const p2Name = el("p2Name");
+const p1Wins = el("p1Wins");
+const p2Wins = el("p2Wins");
+
+// Board
+const p1Peg = el("p1Peg");
+const p2Peg = el("p2Peg");
+const p1Label = el("p1Label");
+const p2Label = el("p2Label");
+const ticks = el("ticks");
+
+// Play panel
 const handTitle = el("handTitle");
 const handHelp = el("handHelp");
 const handArea = el("handArea");
@@ -32,40 +38,39 @@ const nextGameBtn = el("nextGameBtn");
 
 const logArea = el("logArea");
 
-const showPanel = el("showPanel");
-const showTitle = el("showTitle");
-const cribTitle = el("cribTitle");
-const cutLine = el("cutLine");
-const ndTitle = el("ndTitle");
-const dTitle = el("dTitle");
-const ndCards = el("ndCards");
-const dCards = el("dCards");
-const cCards = el("cCards");
-const ndBreak = el("ndBreak");
-const dBreak = el("dBreak");
-const cBreak = el("cBreak");
-const ndTotal = el("ndTotal");
-const dTotal = el("dTotal");
-const cTotal = el("cTotal");
-
+// Peg HUD
 const pileArea = el("pileArea");
 const countNum = el("countNum");
 const peggingStatus = el("peggingStatus");
 const lastScore = el("lastScore");
 
-// board/match
-const p1Peg = el("p1Peg");
-const p2Peg = el("p2Peg");
-const p1Label = el("p1Label");
-const p2Label = el("p2Label");
-const ticks = el("ticks");
-const p1Name = el("p1Name");
-const p2Name = el("p2Name");
-const p1Wins = el("p1Wins");
-const p2Wins = el("p2Wins");
+// Show panel
+const showPanel = el("showPanel");
+const cutLine = el("cutLine");
+const ndTitle = el("ndTitle");
+const dTitle = el("dTitle");
+const cTitle = el("cTitle");
 
-const qs = new URLSearchParams(location.search);
-const urlTable = (qs.get("table") || "JIM1").toString().trim();
+const ndCards = el("ndCards");
+const dCards = el("dCards");
+const cCards = el("cCards");
+
+const ndBreak = el("ndBreak");
+const dBreak = el("dBreak");
+const cBreak = el("cBreak");
+
+const ndTotal = el("ndTotal");
+const dTotal = el("dTotal");
+const cTotal = el("cTotal");
+
+// Join overlay elements
+const joinOverlay = el("joinOverlay");
+const tableInput = el("tableInput");
+const nameInput = el("nameInput");
+const nameJoinBtn = el("nameJoinBtn");
+
+let state = null;
+let selectedForDiscard = new Set();
 
 function suitClass(suit) {
   return (suit === "♥" || suit === "♦") ? "red" : "black";
@@ -103,51 +108,58 @@ function cardValue(rank) {
   return parseInt(rank, 10);
 }
 
-function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
 
 function initTicks() {
+  if (!ticks) return;
   ticks.innerHTML = "";
   const marks = [0, 30, 60, 90, 121];
   for (const m of marks) {
     const span = document.createElement("span");
-    span.textContent = m.toString();
+    span.textContent = String(m);
     ticks.appendChild(span);
   }
 }
 
-function setPegPosition(pegEl, score) {
-  const s = clamp(score, 0, 121);
-  const pct = (s / 121) * 100;
+function setPegPosition(pegEl, score, target = 121) {
+  const s = clamp(score, 0, target);
+  const pct = (s / target) * 100;
   pegEl.style.left = `${pct}%`;
 }
 
-function renderMatchPips(container, wins, target=3){
+function renderBoard() {
+  if (!state) return;
+
+  const n1 = state.names?.PLAYER1 || "P1";
+  const n2 = state.names?.PLAYER2 || "P2";
+  p1Label.textContent = `P1 (${n1})`;
+  p2Label.textContent = `P2 (${n2})`;
+
+  setPegPosition(p1Peg, state.scores.PLAYER1, state.gameTarget || 121);
+  setPegPosition(p2Peg, state.scores.PLAYER2, state.gameTarget || 121);
+}
+
+function renderPips(container, count, target) {
   container.innerHTML = "";
-  for (let i=0;i<target;i++){
+  for (let i = 0; i < target; i++) {
     const d = document.createElement("div");
-    d.className = "pip" + (i < wins ? " on" : "");
+    d.className = "pip" + (i < count ? " on" : "");
     container.appendChild(d);
   }
 }
 
-function renderBoardAndMatch() {
+function renderMatch() {
   if (!state) return;
+  const n1 = state.names?.PLAYER1 || "PLAYER1";
+  const n2 = state.names?.PLAYER2 || "PLAYER2";
+  p1Name.textContent = n1;
+  p2Name.textContent = n2;
 
-  const p1 = state.players.PLAYER1 || "—";
-  const p2 = state.players.PLAYER2 || "—";
-
-  p1Label.textContent = `P1 (${p1})`;
-  p2Label.textContent = `P2 (${p2})`;
-  p1Name.textContent = `P1 (${p1})`;
-  p2Name.textContent = `P2 (${p2})`;
-
-  initTicks();
-  setPegPosition(p1Peg, state.scores.PLAYER1);
-  setPegPosition(p2Peg, state.scores.PLAYER2);
-
-  const mw = state.matchWins || { PLAYER1:0, PLAYER2:0 };
-  renderMatchPips(p1Wins, mw.PLAYER1 || 0, state.matchTargetWins || 3);
-  renderMatchPips(p2Wins, mw.PLAYER2 || 0, state.matchTargetWins || 3);
+  const target = state.matchTarget || 3;
+  renderPips(p1Wins, state.matchWins?.PLAYER1 || 0, target);
+  renderPips(p2Wins, state.matchWins?.PLAYER2 || 0, target);
 }
 
 function renderPileAndHud() {
@@ -155,10 +167,13 @@ function renderPileAndHud() {
 
   countNum.textContent = String(state.peg?.count ?? 0);
 
+  // pile cards
   pileArea.innerHTML = "";
   const pile = state.peg?.pile || [];
-  const show = pile.length > 10 ? pile.slice(pile.length - 10) : pile;
-  for (const c of show) pileArea.appendChild(makeCardButton(c, { disabled: true }));
+  const show = pile.length > 12 ? pile.slice(pile.length - 12) : pile;
+  for (const c of show) {
+    pileArea.appendChild(makeCardButton(c, { disabled: true }));
+  }
 
   if (state.stage !== "pegging") {
     peggingStatus.textContent = "Pegging info appears during the pegging phase.";
@@ -213,12 +228,15 @@ function renderShow() {
   const nonDealer = state.show.nonDealer;
   const dealer = state.show.dealer;
 
-  ndTitle.textContent = `Non-dealer (${nonDealer})`;
-  dTitle.textContent = `Dealer (${dealer})`;
+  const ndName = state.names?.[nonDealer] || nonDealer;
+  const dName = state.names?.[dealer] || dealer;
 
-  // Crib title includes whose crib
-  const cribOwner = state.cribOwner || dealer;
-  cribTitle.textContent = `Crib (${cribOwner})`;
+  ndTitle.textContent = `Non-dealer (${ndName})`;
+  dTitle.textContent = `Dealer (${dName})`;
+
+  const cribOwner = state.show.cribOwner || dealer;
+  const cribOwnerName = state.names?.[cribOwner] || cribOwner;
+  cTitle.textContent = `Crib (${cribOwnerName})`;
 
   ndCards.innerHTML = "";
   dCards.innerHTML = "";
@@ -244,39 +262,36 @@ function renderShow() {
   ndTotal.textContent = `Total: ${nd.breakdown.total}`;
   dTotal.textContent = `Total: ${de.breakdown.total}`;
   cTotal.textContent = `Total: ${cr.breakdown.total}`;
-
-  if (state.gameOver) {
-    showTitle.textContent = `Game Over — Winner: ${state.gameWinner || "—"}`;
-  } else {
-    showTitle.textContent = "Show";
-  }
 }
 
 function render() {
   if (!state) return;
 
   tableLine.textContent = `Table: ${state.tableId}`;
-  meLine.textContent = `You: ${state.me}`;
+  meLine.textContent = `You: ${state.names?.[state.me] || state.me}`;
 
   const p1 = state.players.PLAYER1 ? state.players.PLAYER1 : "—";
   const p2 = state.players.PLAYER2 ? state.players.PLAYER2 : "—";
-  playersLine.textContent = `Crew: P1=${p1} | P2=${p2}`;
+  playersLine.textContent = `Players: P1=${p1} | P2=${p2}`;
 
   stageLine.textContent = `Stage: ${state.stage}`;
-  dealerLine.textContent = `Dealer: ${state.dealer}`;
-  turnLine.textContent = `Turn: ${state.turn}`;
+  dealerLine.textContent = `Dealer: ${state.names?.[state.dealer] || state.dealer}`;
+  turnLine.textContent = `Turn: ${state.names?.[state.turn] || state.turn}`;
 
-  scoreLine.textContent = `P1 ${state.scores.PLAYER1}/121 • P2 ${state.scores.PLAYER2}/121`;
+  scoreLine.textContent = `P1 ${state.scores.PLAYER1}/${state.gameTarget || 121} • P2 ${state.scores.PLAYER2}/${state.gameTarget || 121}`;
 
-  const cribOwner = state.cribOwner || state.dealer;
-  cribLine.textContent = `Crib (${cribOwner}) • Cards: ${state.cribCount} • Discards: P1=${state.discardsCount.PLAYER1}/2 P2=${state.discardsCount.PLAYER2}/2`;
+  cribLine.textContent =
+    `Crib: ${state.cribCount} | Discards: P1=${state.discardsCount.PLAYER1}/2 P2=${state.discardsCount.PLAYER2}/2`;
 
   logArea.textContent = (state.log || []).join("\n");
 
-  renderBoardAndMatch();
+  initTicks();
+  renderBoard();
+  renderMatch();
   renderPileAndHud();
   renderShow();
 
+  // buttons default
   discardBtn.style.display = "none";
   goBtn.style.display = "none";
   nextHandBtn.style.display = "none";
@@ -285,7 +300,25 @@ function render() {
 
   handArea.innerHTML = "";
 
-  // STAGE UI
+  // match/game over messaging
+  if (state.matchOver) {
+    handTitle.textContent = "🏴‍☠️ Match Over";
+    const w = state.matchWinner ? (state.names?.[state.matchWinner] || state.matchWinner) : "—";
+    handHelp.textContent = `${w} wins the match. Click New Match to restart.`;
+    showPanel.classList.remove("hidden");
+    return;
+  }
+
+  if (state.gameOver) {
+    handTitle.textContent = "🏁 Game Over";
+    const w = state.gameWinner ? (state.names?.[state.gameWinner] || state.gameWinner) : "—";
+    handHelp.textContent = `${w} wins this game. Click Next Game to continue the match.`;
+    nextGameBtn.style.display = "inline-block";
+    nextGameBtn.onclick = () => socket.emit("next_game");
+    showPanel.classList.remove("hidden");
+    return;
+  }
+
   if (state.stage === "lobby") {
     handTitle.textContent = "Waiting for crew…";
     handHelp.textContent = `Open another browser/incognito and join table "${state.tableId}".`;
@@ -295,7 +328,7 @@ function render() {
 
   if (state.stage === "discard") {
     showPanel.classList.add("hidden");
-    handTitle.textContent = "Your Hand";
+    handTitle.textContent = "Discard";
     handHelp.textContent = "Click 2 cards to discard to the crib.";
 
     const myHand = state.myHand || [];
@@ -345,6 +378,7 @@ function render() {
       handArea.appendChild(btn);
     });
 
+    // GO button only if it's your turn, you have cards, and none playable.
     const canPlay = myHand.some(c => count + cardValue(c.rank) <= 31);
     if (myTurn && myHand.length > 0 && !canPlay) {
       goBtn.style.display = "inline-block";
@@ -354,31 +388,31 @@ function render() {
   }
 
   if (state.stage === "show") {
-    handTitle.textContent = state.gameOver ? "Game Over" : "Show";
-    handHelp.textContent = state.gameOver
-      ? "Game ended at 121+. Start the next game when ready."
-      : "Scoring breakdown is shown below. Click Next Hand when ready.";
+    handTitle.textContent = "Show";
+    handHelp.textContent = "Scoring breakdown is shown below. Click Next Hand when ready.";
+    nextHandBtn.style.display = "inline-block";
+    nextHandBtn.onclick = () => socket.emit("next_hand");
 
-    if (state.gameOver) {
-      nextGameBtn.style.display = "inline-block";
-      nextGameBtn.onclick = () => socket.emit("next_game");
-    } else {
-      nextHandBtn.style.display = "inline-block";
-      nextHandBtn.onclick = () => socket.emit("next_hand");
-    }
+    // Show your hand + cut as reference
+    const myHand = state.myHand || [];
+    myHand.forEach(card => handArea.appendChild(makeCardButton(card, { disabled: true })));
+    if (state.cut) handArea.appendChild(makeCardButton(state.cut, { disabled: true }));
     return;
   }
 }
 
-/* ---- Join overlay behavior ---- */
-function connectAndJoin() {
-  const name = (nameInput.value || "").trim().slice(0, 16);
-  const tableId = (tableInput.value || urlTable || "JIM1").trim().slice(0, 24);
+// Join overlay logic
+function getDefaultTableFromURL() {
+  const qs = new URLSearchParams(location.search);
+  return (qs.get("table") || "JIM1").toString().trim().slice(0, 24);
+}
+function getDefaultNameFromURL() {
+  const qs = new URLSearchParams(location.search);
+  return (qs.get("name") || "").toString().trim().slice(0, 16);
+}
 
-  if (!name) return alert("Enter your pirate name.");
-
-  if (socket) socket.disconnect();
-
+function connectAndJoin(tableId, name) {
+  if (socket) return;
   socket = io();
 
   socket.on("connect", () => {
@@ -387,15 +421,27 @@ function connectAndJoin() {
 
   socket.on("state", (s) => {
     state = s;
-    joinOverlay.style.display = "none";
     render();
   });
 
   socket.on("error_msg", (msg) => alert(msg));
 }
 
-nameJoinBtn.addEventListener("click", connectAndJoin);
+(function initJoinOverlay() {
+  tableInput.value = getDefaultTableFromURL();
+  nameInput.value = getDefaultNameFromURL();
 
-// prefill
-tableInput.value = urlTable || "JIM1";
-nameInput.focus();
+  nameJoinBtn.onclick = () => {
+    const t = (tableInput.value || "JIM1").toString().trim().slice(0, 24);
+    const n = (nameInput.value || "").toString().trim().slice(0, 16);
+
+    joinOverlay.style.display = "none";
+    connectAndJoin(t, n);
+  };
+})();
+
+// New match button
+newMatchBtn.onclick = () => {
+  if (!socket) return;
+  socket.emit("new_match");
+};
