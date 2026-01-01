@@ -1,55 +1,23 @@
-# Pirate Cribbage — Project Status (Jan 2026)
+# Pirate Cribbage PWA — Project Status (2026-01-01)
 
-## Live
-- Hosted on Railway, Express + Socket.IO server serving `/public`.
+## Working
+- 2-player Socket.IO join + table
+- Deal 6, discard 2 to crib
+- Pegging phase with:
+  - turn-taking
+  - 15 / 31 / pairs / last card
+  - run scoring (server-side)
+  - graphical pile display
+- Show scoring with breakdown (15s / pairs / runs / flush / nobs)
+- Pirate-themed UI baseline
+- Captain’s Log removed from UI (per request)
 
-## Game Flow
-1. Join table (2 players) with name entry (overlay “Set Sail”).
-2. Deal 6 each.
-3. Each discards 2 to crib (crib has 4).
-4. Cut card revealed.
-5. Pegging phase:
-   - Turn-taking
-   - GO handling
-   - Auto sequence reset at 31 and when both cannot play
-   - Special case: if opponent is out of cards and remaining player is blocked, sequence ends + resets (no stall)
-6. Show scoring:
-   - Hand + crib scored with breakdown list (15s/pairs/runs/flush/nobs)
-7. Next hand (dealer alternates)
+## Fixed in this update
+- Frontend was broken because `join_table` was never emitted.
+- Discard selection UI was removed in error.
+- GO button visibility/behavior restored to “only when GO is valid”.
 
-## Scoring Implemented
-### Pegging
-- 15 for 2
-- 31 for 2
-- Pairs / trips / quads
-- Runs (3+ from most recent cards, no duplicates)
-- Last card for 1
-- Fix: no-stall when opponent has 0 cards
-
-### Show
-- 15s (combinations) with count
-- Pairs with multiplicity
-- Runs with multiplicity
-- Flush (crib requires 5-card)
-- Nobs
-- Show panel displays “Crib (DealerName)”
-
-## End Conditions
-- Game ends at 121+ (no more dealing hands after win)
-- Match wins tracked (first to 3 wins by default)
-- “Next Game” starts new game (scores reset, dealer alternates)
-- “New Match” resets match wins and game
-
-## UI
-- Stable max-width layout to reduce screen-to-screen differences
-- Large, colored cards with amber highlight on selection (no blue/white)
-- Prominent GO button
-- Pegging count large and central
-- Match wins shown as pips
-- Cribbage board (Option B style) with peg positions 0–121
-
-## Files
-- `server.js` — game state, Socket.IO, scoring, match/game end logic
-- `public/index.html` — layout + join overlay
-- `public/js/app.js` — client UI rendering + actions
-- `public/css/styles.css` — theme + layout + cards
+## Next Up
+- Confirm GO edge-case stall is fully solved in server logic (if still reproducible).
+- Game-end at 121 + match wins UI (if not already stable in current server.js).
+- Improve board/rope realism (Option B visuals) without breaking layout.
