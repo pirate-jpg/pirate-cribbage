@@ -1,10 +1,12 @@
-// Pirate Cribbage - discard -> pegging -> show -> next hand
-// Enhancements:
-// - pegging run scoring
-// - auto-reset when opponent has 0 cards but count blocks remaining player (prevents stall)
-// - game ends at 121 (no dealing past 121)
-// - match wins tracking (first to 3)
-// - crib owner tracked for UI ("Crib (PLAYER1)" / name)
+// Pirate Cribbage - discard -> pegging -> show
+// Complete server.js (fixes "Unexpected end of input" crash)
+// Features:
+// - Game ends at 121 (gameOver) and requires Next Game to continue
+// - Match wins tracking (first to 3 by default)
+// - Pegging scoring: 15/31, pairs, runs, last card
+// - Auto-stall prevention when opponent is out of cards
+// - Show scoring with breakdown: 15s, pairs, runs, flush, nobs
+// - Crib owner tracked each hand for UI ("Crib (dealer)")
 
 const path = require("path");
 const express = require("express");
@@ -21,10 +23,10 @@ const io = new Server(server);
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log("Listening on", PORT));
 
-const tables = {}; // tableId -> tableState
-
 const GAME_TARGET = 121;
 const MATCH_TARGET_WINS = 3;
+
+const tables = {}; // tableId -> tableState
 
 function newDeck() {
   const suits = ["♠", "♥", "♦", "♣"];
@@ -66,7 +68,7 @@ function ensureTable(tableId) {
     tables[tableId] = {
       id: tableId,
       players: { PLAYER1: null, PLAYER2: null },
-      names: { PLAYER1: "Pirate", PLAYER2: "PLAYER2" },
+      names: { PLAYER1: "Pirate", PLAYER2: "Pirate2" },
 
       dealer: "PLAYER1",
       stage: "lobby", // lobby | discard | pegging | show
@@ -80,12 +82,11 @@ function ensureTable(tableId) {
       hands: { PLAYER1: [], PLAYER2: [] },     // preserved for show
       pegHands: { PLAYER1: [], PLAYER2: [] },  // consumed during pegging
 
-      originalHands: { PLAYER1: [], PLAYER2: [] },
       discards: { PLAYER1: [], PLAYER2: [] },
 
       peg: {
         count: 0,
-        pile: [], // card objects since last reset
+        pile: [],
         lastPlayer: null,
         go: { PLAYER1: false, PLAYER2: false }
       },
@@ -110,7 +111,7 @@ function ensureTable(tableId) {
 
 function pushLog(t, msg) {
   t.log.push(msg);
-  if (t.log.length > 160) t.log.shift();
+  if (t.log.length > 200) t.log.shift();
 }
 
 function publicStateFor(t, me) {
@@ -157,7 +158,6 @@ function publicStateFor(t, me) {
 
     lastPegEvent: t.lastPegEvent,
     show: t.show,
-
     log: t.log
   };
 }
@@ -173,14 +173,16 @@ function emitState(tableId) {
 
 function checkGameOver(t) {
   if (t.gameOver) return true;
+
   const p1 = t.scores.PLAYER1;
   const p2 = t.scores.PLAYER2;
 
   if (p1 >= GAME_TARGET || p2 >= GAME_TARGET) {
     t.gameOver = true;
-    t.gameWinner = (p1 >= GAME_TARGET && p2 >= GAME_TARGET)
-      ? (p1 >= p2 ? "PLAYER1" : "PLAYER2")
-      : (p1 >= GAME_TARGET ? "PLAYER1" : "PLAYER2");
+    t.gameWinner =
+      (p1 >= GAME_TARGET && p2 >= GAME_TARGET)
+        ? (p1 >= p2 ? "PLAYER1" : "PLAYER2")
+        : (p1 >= GAME_TARGET ? "PLAYER1" : "PLAYER2");
 
     t.matchWins[t.gameWinner] += 1;
 
@@ -207,18 +209,15 @@ function startHand(t) {
   t.lastPegEvent = null;
 
   t.cribOwner = t.dealer;
-
   t.discards = { PLAYER1: [], PLAYER2: [] };
   t.peg = { count: 0, pile: [], lastPlayer: null, go: { PLAYER1:false, PLAYER2:false } };
 
   const p1 = t.deck.splice(0, 6);
   const p2 = t.deck.splice(0, 6);
 
-  t.originalHands.PLAYER1 = [...p1];
-  t.originalHands.PLAYER2 = [...p2];
-
   t.hands.PLAYER1 = [...p1];
   t.hands.PLAYER2 = [...p2];
+
   t.pegHands.PLAYER1 = [...p1];
   t.pegHands.PLAYER2 = [...p2];
 
@@ -232,6 +231,7 @@ function enterPegging(t) {
 
   pushLog(t, `Cut: ${t.cut.rank}${t.cut.suit}`);
 
+  // pegHands are the 4-card post-discard hands (hands are already 4 after discards)
   t.pegHands.PLAYER1 = [...t.hands.PLAYER1];
   t.pegHands.PLAYER2 = [...t.hands.PLAYER2];
 
@@ -268,6 +268,7 @@ function pegPointsAfterPlay(t, player, playedCard) {
   if (t.peg.count === 15) { pts += 2; reasons.push("15 for 2"); }
   if (t.peg.count === 31) { pts += 2; reasons.push("31 for 2"); }
 
+  // pairs/trips/quads on last consecutive ranks
   let same = 1;
   for (let i = t.peg.pile.length - 2; i >= 0; i--) {
     if (t.peg.pile[i].rank === playedCard.rank) same++;
@@ -301,7 +302,10 @@ function resetPegCount(t) {
   pushLog(t, `Count resets to 0.`);
 }
 
-/** SHOW scoring with breakdown (same as your working version) */
+/** -------------------------
+ * SHOW scoring with breakdown
+ * ------------------------- */
+
 function combos(arr, k, start=0, prefix=[], out=[]) {
   if (prefix.length === k) { out.push(prefix); return out; }
   for (let i = start; i <= arr.length - (k - prefix.length); i++) {
@@ -323,4 +327,361 @@ function score15sDetailed(cards) {
 
 function scorePairsDetailed(cards) {
   const byRank = {};
-  for (const c of cards) byRank[c.rank
+  for (const c of cards) byRank[c.rank] = (byRank[c.rank] || 0) + 1;
+
+  let pairCount = 0;
+  let pts = 0;
+
+  for (const r of Object.keys(byRank)) {
+    const n = byRank[r];
+    if (n >= 2) {
+      const comb = (n * (n - 1)) / 2;
+      pairCount += comb;
+      pts += comb * 2;
+    }
+  }
+  return { pairs: pairCount, pts };
+}
+
+function runsMultiplicity(cards) {
+  const counts = Array(14).fill(0);
+  for (const c of cards) counts[rankNum(c.rank)]++;
+
+  function runCount(len) {
+    let total = 0;
+    for (let start=1; start<=13-len+1; start++) {
+      let mult = 1;
+      for (let r=start; r<start+len; r++) {
+        if (counts[r] === 0) { mult = 0; break; }
+        mult *= counts[r];
+      }
+      if (mult > 0) total += mult;
+    }
+    return total;
+  }
+
+  for (let len=5; len>=3; len--) {
+    const mult = runCount(len);
+    if (mult > 0) return { len, mult, pts: len * mult };
+  }
+  return { len: 0, mult: 0, pts: 0 };
+}
+
+function scoreFlushDetailed(hand4, cut, isCrib) {
+  const suit = hand4[0].suit;
+  const all4 = hand4.every(c => c.suit === suit);
+  if (!all4) return { type: "none", pts: 0 };
+
+  const cutMatches = cut.suit === suit;
+
+  if (isCrib) {
+    return cutMatches ? { type: "5-card flush", pts: 5 } : { type: "crib needs 5-card flush", pts: 0 };
+  }
+
+  if (cutMatches) return { type: "5-card flush", pts: 5 };
+  return { type: "4-card flush", pts: 4 };
+}
+
+function scoreNobsDetailed(hand4, cut) {
+  const has = hand4.some(c => c.rank === "J" && c.suit === cut.suit);
+  return { has, pts: has ? 1 : 0 };
+}
+
+function scoreHandBreakdown(hand4, cut, isCrib=false) {
+  const all = hand4.concat([cut]);
+  const items = [];
+
+  const fif = score15sDetailed(all);
+  if (fif.count > 0) items.push({ label: `${fif.count} fifteens`, pts: fif.pts });
+
+  const pr = scorePairsDetailed(all);
+  if (pr.pairs > 0) items.push({ label: `${pr.pairs} pair${pr.pairs===1?"":"s"}`, pts: pr.pts });
+
+  const ru = runsMultiplicity(all);
+  if (ru.len >= 3) {
+    const label = ru.mult === 1 ? `run of ${ru.len}` : `${ru.mult} runs of ${ru.len}`;
+    items.push({ label, pts: ru.pts });
+  }
+
+  const fl = scoreFlushDetailed(hand4, cut, isCrib);
+  if (fl.pts > 0) items.push({ label: fl.type, pts: fl.pts });
+
+  const nb = scoreNobsDetailed(hand4, cut);
+  if (nb.pts > 0) items.push({ label: "nobs (jack matches cut suit)", pts: 1 });
+
+  const total = items.reduce((a,i)=>a+i.pts,0);
+  return { total, items };
+}
+
+function scoreShowAndAdvance(t) {
+  const nonDealer = otherPlayer(t.dealer);
+  const dealer = t.dealer;
+
+  const nonBD = scoreHandBreakdown(t.hands[nonDealer], t.cut, false);
+  const deaBD = scoreHandBreakdown(t.hands[dealer], t.cut, false);
+  const cribBD = scoreHandBreakdown(t.crib, t.cut, true);
+
+  t.scores[nonDealer] += nonBD.total;
+  t.scores[dealer] += deaBD.total + cribBD.total;
+
+  t.show = {
+    nonDealer,
+    dealer,
+    cut: t.cut,
+    hand: {
+      [nonDealer]: { cards: t.hands[nonDealer], breakdown: nonBD },
+      [dealer]: { cards: t.hands[dealer], breakdown: deaBD }
+    },
+    crib: { cards: t.crib, breakdown: cribBD }
+  };
+
+  pushLog(t, `SHOW: ${nonDealer} +${nonBD.total}, ${dealer} +${deaBD.total}, crib +${cribBD.total}`);
+  t.stage = "show";
+
+  // stop dealing if game ended
+  checkGameOver(t);
+}
+
+/** -------------------------
+ * Socket.IO
+ * ------------------------- */
+
+io.on("connection", (socket) => {
+  socket.on("join_table", ({ tableId, name }) => {
+    tableId = (tableId || "JIM1").toString().trim().slice(0, 24);
+    const t = ensureTable(tableId);
+
+    let me = null;
+    if (!t.players.PLAYER1) me = "PLAYER1";
+    else if (!t.players.PLAYER2) me = "PLAYER2";
+    else return socket.emit("error_msg", "Table is full (2 players).");
+
+    t.players[me] = socket.id;
+    t.names[me] = (name || me).toString().trim().slice(0, 16) || me;
+
+    socket.tableId = tableId;
+    socket.playerId = me;
+
+    pushLog(t, `${t.names[me]} joined as ${me}.`);
+    emitState(tableId);
+
+    if (t.players.PLAYER1 && t.players.PLAYER2 && t.stage === "lobby") {
+      startHand(t);
+      emitState(tableId);
+    }
+  });
+
+  socket.on("discard_to_crib", ({ cardIds }) => {
+    const t = tables[socket.tableId];
+    if (!t || t.stage !== "discard" || t.gameOver || t.matchOver) return;
+
+    const me = socket.playerId;
+    const ids = Array.isArray(cardIds) ? cardIds : [];
+    if (!me || ids.length !== 2) return;
+
+    const hand = t.hands[me];
+    const chosen = [];
+    for (const id of ids) {
+      const idx = hand.findIndex(c => c.id === id);
+      if (idx === -1) return;
+      chosen.push(hand[idx]);
+    }
+
+    t.hands[me] = t.hands[me].filter(c => !ids.includes(c.id));
+    t.pegHands[me] = t.pegHands[me].filter(c => !ids.includes(c.id));
+
+    t.discards[me] = chosen;
+    t.crib.push(...chosen);
+
+    pushLog(t, `${me} discards 2 to crib.`);
+
+    const p1Done = t.discards.PLAYER1.length === 2;
+    const p2Done = t.discards.PLAYER2.length === 2;
+
+    if (p1Done && p2Done && t.crib.length === 4) enterPegging(t);
+
+    emitState(socket.tableId);
+  });
+
+  socket.on("play_card", ({ cardId }) => {
+    const t = tables[socket.tableId];
+    if (!t || t.stage !== "pegging" || t.gameOver || t.matchOver) return;
+
+    const me = socket.playerId;
+    if (!me || t.turn !== me) return;
+
+    const hand = t.pegHands[me];
+    const idx = hand.findIndex(c => c.id === cardId);
+    if (idx === -1) return;
+
+    const card = hand[idx];
+    const val = cardValue(card.rank);
+    if (t.peg.count + val > 31) return;
+
+    // play it
+    hand.splice(idx, 1);
+    t.pegHands[me] = hand;
+
+    t.peg.count += val;
+    t.peg.pile.push(card);
+    t.peg.lastPlayer = me;
+    t.peg.go.PLAYER1 = false;
+    t.peg.go.PLAYER2 = false;
+
+    pushLog(t, `${me} plays ${card.rank}${card.suit}. Count=${t.peg.count}`);
+
+    const pts = pegPointsAfterPlay(t, me, card);
+    if (pts) t.scores[me] += pts;
+
+    // if 31
+    if (t.peg.count === 31) {
+      resetPegCount(t);
+      t.turn = otherPlayer(me);
+      pushLog(t, `${t.turn} to play.`);
+      return emitState(socket.tableId);
+    }
+
+    const opp = otherPlayer(me);
+
+    // If opponent has 0 cards left, the same player continues IF they can play;
+    // If they cannot play (all remaining cards would bust), auto-award last card and reset.
+    if ((t.pegHands[opp]?.length || 0) === 0) {
+      if (canPlayAny(t.pegHands[me], t.peg.count)) {
+        t.turn = me;
+      } else {
+        awardLastCardIfNeeded(t);
+        resetPegCount(t);
+        t.turn = me;
+      }
+    } else {
+      t.turn = opp;
+    }
+
+    // pegging over?
+    if (t.pegHands.PLAYER1.length === 0 && t.pegHands.PLAYER2.length === 0) {
+      awardLastCardIfNeeded(t);
+      scoreShowAndAdvance(t);
+    }
+
+    emitState(socket.tableId);
+  });
+
+  socket.on("go", () => {
+    const t = tables[socket.tableId];
+    if (!t || t.stage !== "pegging" || t.gameOver || t.matchOver) return;
+
+    const me = socket.playerId;
+    if (!me || t.turn !== me) return;
+
+    const opp = otherPlayer(me);
+
+    // If opponent has 0 cards, GO is irrelevant — ignore
+    if ((t.pegHands[opp]?.length || 0) === 0) return;
+
+    // If I actually CAN play, ignore GO
+    if (canPlayAny(t.pegHands[me], t.peg.count)) return;
+
+    t.peg.go[me] = true;
+    pushLog(t, `${me} says GO.`);
+
+    if (canPlayAny(t.pegHands[opp], t.peg.count)) {
+      t.turn = opp;
+      pushLog(t, `${opp} to play.`);
+      return emitState(socket.tableId);
+    }
+
+    // both can't play -> last card + reset
+    awardLastCardIfNeeded(t);
+    resetPegCount(t);
+
+    // after reset, non-dealer leads (simple stable rule)
+    t.turn = otherPlayer(t.dealer);
+    pushLog(t, `${t.turn} to play.`);
+
+    // if pegging ended after last card
+    if (t.pegHands.PLAYER1.length === 0 && t.pegHands.PLAYER2.length === 0) {
+      scoreShowAndAdvance(t);
+    }
+
+    emitState(socket.tableId);
+  });
+
+  socket.on("next_hand", () => {
+    const t = tables[socket.tableId];
+    if (!t || t.stage !== "show") return;
+
+    if (t.gameOver || t.matchOver) return; // must use next_game
+
+    t.dealer = otherPlayer(t.dealer);
+    if (t.players.PLAYER1 && t.players.PLAYER2) {
+      startHand(t);
+      emitState(socket.tableId);
+    }
+  });
+
+  socket.on("next_game", () => {
+    const t = tables[socket.tableId];
+    if (!t) return;
+
+    if (t.matchOver) return;
+
+    // reset game-only state
+    t.scores = { PLAYER1: 0, PLAYER2: 0 };
+    t.gameOver = false;
+    t.gameWinner = null;
+
+    // dealer alternates each new game for fairness
+    t.dealer = otherPlayer(t.dealer);
+
+    t.stage = "lobby";
+    t.deck = [];
+    t.cut = null;
+    t.crib = [];
+    t.show = null;
+    t.lastPegEvent = null;
+    t.discards = { PLAYER1: [], PLAYER2: [] };
+    t.pegHands = { PLAYER1: [], PLAYER2: [] };
+    t.hands = { PLAYER1: [], PLAYER2: [] };
+    t.peg = { count: 0, pile: [], lastPlayer: null, go: { PLAYER1:false, PLAYER2:false } };
+
+    pushLog(t, `⚓ New game begins. Dealer: ${t.dealer}`);
+
+    if (t.players.PLAYER1 && t.players.PLAYER2) {
+      startHand(t);
+    }
+    emitState(socket.tableId);
+  });
+
+  socket.on("new_match", () => {
+    const t = tables[socket.tableId];
+    if (!t) return;
+
+    // full reset match
+    t.matchWins = { PLAYER1: 0, PLAYER2: 0 };
+    t.matchOver = false;
+
+    t.scores = { PLAYER1: 0, PLAYER2: 0 };
+    t.gameOver = false;
+    t.gameWinner = null;
+
+    t.dealer = "PLAYER1";
+    t.stage = "lobby";
+    t.log = [];
+    pushLog(t, "🏴‍☠️ New match started.");
+
+    if (t.players.PLAYER1 && t.players.PLAYER2) startHand(t);
+    emitState(socket.tableId);
+  });
+
+  socket.on("disconnect", () => {
+    const t = tables[socket.tableId];
+    if (!t) return;
+
+    const me = socket.playerId;
+    if (me && t.players[me] === socket.id) {
+      t.players[me] = null;
+      pushLog(t, `${me} disconnected.`);
+    }
+    emitState(socket.tableId);
+  });
+});
