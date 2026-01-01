@@ -1,56 +1,55 @@
-# Pirate Cribbage PWA — Project Status
+# Pirate Cribbage — Project Status (Jan 2026)
 
-## Hosting / Stack
-- Hosted on Railway
-- Node + Express static server
-- Socket.IO real-time multiplayer
-- Client: vanilla JS + CSS
+## Live
+- Hosted on Railway, Express + Socket.IO server serving `/public`.
 
-## Current Gameplay Flow
-1. Join table (2 players)
-2. Deal 6 cards each
-3. Discard 2 to crib (crib builds to 4)
-4. Cut card
+## Game Flow
+1. Join table (2 players) with name entry (overlay “Set Sail”).
+2. Deal 6 each.
+3. Each discards 2 to crib (crib has 4).
+4. Cut card revealed.
 5. Pegging phase:
    - Turn-taking
-   - GO logic
-   - Auto-solo behavior when opponent has no cards
-   - Pegging scoring: 15, 31, pairs, runs, last card
-6. Show phase:
-   - Non-dealer scores hand (with breakdown)
-   - Dealer scores hand (with breakdown)
-   - Dealer scores crib (with breakdown)
-7. Next Hand
-8. Game ends at 121:
-   - Server enforces GAME OVER stage
-   - Displays winner + final scores
-   - Buttons: Next Game (match continues) / New Match (reset)
+   - GO handling
+   - Auto sequence reset at 31 and when both cannot play
+   - Special case: if opponent is out of cards and remaining player is blocked, sequence ends + resets (no stall)
+6. Show scoring:
+   - Hand + crib scored with breakdown list (15s/pairs/runs/flush/nobs)
+7. Next hand (dealer alternates)
 
-## Scoring / UI
-- “Show” includes detailed breakdown items (fifteens, pairs, runs, flush, nobs)
-- Pegging HUD shows:
-  - Count (prominent)
-  - Last scoring event (prominent)
-  - Pile of pegging cards displayed graphically
-- Cribbage board:
-  - SVG “Option B” board with major/minor tick marks and labeled 0..121
-  - Pegs move based on current game score
-- Match score:
-  - Visual “pips/medallions” for games won per player (e.g., 3–2)
+## Scoring Implemented
+### Pegging
+- 15 for 2
+- 31 for 2
+- Pairs / trips / quads
+- Runs (3+ from most recent cards, no duplicates)
+- Last card for 1
+- Fix: no-stall when opponent has 0 cards
 
-## Pirate Theme / Visuals
-- Rope accents around panels
-- Anchor mark in header
-- Brass/gold styling
+### Show
+- 15s (combinations) with count
+- Pairs with multiplicity
+- Runs with multiplicity
+- Flush (crib requires 5-card)
+- Nobs
+- Show panel displays “Crib (DealerName)”
 
-## Key Technical Notes
-- `hands` preserved for show scoring
-- `pegHands` consumed during pegging
-- Server prevents pegging stalls when one player has no cards remaining
-- Server prevents dealing after GAME OVER until “new_game” or “new_match”
+## End Conditions
+- Game ends at 121+ (no more dealing hands after win)
+- Match wins tracked (first to 3 wins by default)
+- “Next Game” starts new game (scores reset, dealer alternates)
+- “New Match” resets match wins and game
 
-## Next Improvements (Planned)
-- Add “cribbage board track” polish (more nautical textures, rope corners, optional skull markers)
-- Improve mobile spacing further (bigger touch targets on smaller screens)
-- Add optional sound cues (peg score ding, GO call)
-- Add “New Game confirmation” and match length settings (best-of-N)
+## UI
+- Stable max-width layout to reduce screen-to-screen differences
+- Large, colored cards with amber highlight on selection (no blue/white)
+- Prominent GO button
+- Pegging count large and central
+- Match wins shown as pips
+- Cribbage board (Option B style) with peg positions 0–121
+
+## Files
+- `server.js` — game state, Socket.IO, scoring, match/game end logic
+- `public/index.html` — layout + join overlay
+- `public/js/app.js` — client UI rendering + actions
+- `public/css/styles.css` — theme + layout + cards
