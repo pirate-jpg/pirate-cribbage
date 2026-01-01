@@ -9,12 +9,6 @@
   --amber:#e3a018;
   --danger:#d24a3a;
   --shadow: 0 18px 60px #00000066;
-
-  /* layout tuning */
-  --maxw: 1400px;        /* keeps it consistent across screens */
-  --leftCol: 520px;      /* matches your sketch */
-  --logHeight: 260px;
-  --gap: 18px;
 }
 
 *{ box-sizing:border-box; }
@@ -39,7 +33,7 @@ body{
 }
 .brand{ display:flex; align-items:baseline; gap:10px; }
 .anchor{ font-size:20px; color:var(--gold); }
-.title{ font-weight:800; font-size:20px; letter-spacing:0.5px; }
+.title{ font-weight:900; font-size:20px; letter-spacing:0.5px; }
 .subtitle{ font-size:12px; color:var(--muted); margin-left:8px; }
 
 .chip{
@@ -51,7 +45,29 @@ body{
   background:#00000022;
 }
 
-/* Panels */
+/* Layout (more consistent across screens) */
+.page{
+  padding:18px;
+  display:flex;
+  justify-content:center;
+}
+.layout{
+  width:min(1400px, 100%);
+  display:grid;
+  grid-template-columns: 520px 1fr;
+  gap:18px;
+  align-items:start;
+}
+@media (max-width: 1100px){
+  .layout{ grid-template-columns: 1fr; }
+}
+
+.leftStack{
+  display:flex;
+  flex-direction:column;
+  gap:18px;
+}
+
 .panel{
   background: linear-gradient(180deg, #0b2f43cc 0%, #071f2dcc 100%);
   border:1px solid var(--line);
@@ -64,56 +80,6 @@ body{
 .mutedSmall{ color:var(--muted); font-size:12px; }
 .spread{ flex-direction:row; align-items:center; justify-content:space-between; }
 
-/* =========================
-   ✅ YOUR SKETCH LAYOUT
-   ========================= */
-.page{
-  padding:18px;
-  max-width: var(--maxw);
-  margin: 0 auto;
-}
-
-.grid{
-  display:grid;
-  gap: var(--gap);
-  align-items:start;
-
-  grid-template-columns: var(--leftCol) 1fr;
-  grid-template-rows: auto auto var(--logHeight);
-
-  grid-template-areas:
-    "board  pegging"
-    "crew   pegging"
-    "log    log";
-}
-
-/* assign areas */
-.boardPanel{ grid-area: board; }
-.crewPanel{ grid-area: crew; }
-.playPanel{ grid-area: pegging; min-height: 640px; }
-.logPanel{ grid-area: log; }
-
-/* stable log */
-.logPanel .logArea{
-  height: 100%;
-  overflow:auto;
-}
-
-/* Responsive: stack cleanly */
-@media (max-width: 1100px){
-  .grid{
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto auto var(--logHeight);
-    grid-template-areas:
-      "board"
-      "crew"
-      "pegging"
-      "log";
-  }
-  .playPanel{ min-height: 520px; }
-}
-
-/* Crew/Match bits */
 .miniRow{ display:flex; gap:8px; flex-wrap:wrap; margin:10px 0 14px; }
 .pill{
   padding:6px 10px;
@@ -123,6 +89,8 @@ body{
   color:var(--muted);
   font-size:12px;
 }
+
+/* Crew blocks */
 .scoreBlock, .matchBlock{
   margin-top:12px;
   padding:12px;
@@ -131,7 +99,7 @@ body{
   background:#00000018;
 }
 .scoreTitle{ font-size:12px; color:var(--muted); margin-bottom:6px; }
-.scoreText{ font-size:16px; font-weight:800; }
+.scoreText{ font-size:16px; font-weight:900; }
 
 .matchGrid{
   display:grid;
@@ -139,21 +107,20 @@ body{
   align-items:center;
   gap:10px;
 }
-.matchName{ font-weight:800; }
+.matchName{ font-weight:900; }
 .vs{ opacity:0.8; font-size:18px; }
-.pips{ display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+.pips{ display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
 .pip{
-  width:14px; height:14px;
+  width:16px; height:16px;
   border-radius:50%;
   border:1px solid var(--line);
   background:#00000033;
 }
 .pip.on{ background: var(--gold); border-color: #00000055; }
+
 .crewButtons{ margin-top:12px; display:flex; gap:10px; }
 
-/* =========================
-   Board (wooden-ish)
-   ========================= */
+/* Board */
 .woodFrame{
   border-radius:18px;
   border:1px solid #ffffff22;
@@ -162,24 +129,21 @@ body{
     linear-gradient(180deg, #00000035 0%, #00000000 30%);
   padding:14px;
 }
-
 .boardSurface{
   border-radius:16px;
   padding:14px;
   background: linear-gradient(180deg, #00000033 0%, #00000011 100%);
   border:1px solid #ffffff22;
 }
-
 .boardTitle{
   text-align:center;
-  font-weight:900;
+  font-weight:1000;
   letter-spacing:1px;
   font-size:12px;
   color:#f3e7cf;
   margin-bottom:10px;
   opacity:0.95;
 }
-
 .track{
   position:relative;
   padding:12px 10px 28px;
@@ -187,7 +151,6 @@ body{
   border:1px solid #ffffff1f;
   background: linear-gradient(180deg, #2a2018aa 0%, #1b140faa 100%);
 }
-
 .lane{
   height:42px;
   border-radius:999px;
@@ -196,11 +159,10 @@ body{
   position:relative;
   overflow:hidden;
   background:
-    repeating-linear-gradient(90deg, #ffffff0e 0 1px, transparent 1px 8px);
+    repeating-linear-gradient(90deg, #ffffff10 0 1px, transparent 1px 10px);
 }
-
 .peg{
-  width:18px; height:18px;
+  width:20px; height:20px;
   border-radius:50%;
   position:absolute;
   top:50%;
@@ -219,7 +181,6 @@ body{
   margin-top:8px;
   padding:0 6px;
 }
-
 .legend{
   display:flex;
   gap:14px;
@@ -232,9 +193,7 @@ body{
 .dot1{ background:#42d3ff; }
 .dot2{ background:#ff4aa8; }
 
-/* =========================
-   Gameplay panel
-   ========================= */
+/* Gameplay panel */
 .hudRow{
   display:grid;
   grid-template-columns: 220px 1fr;
@@ -251,7 +210,6 @@ body{
   background:#00000022;
   padding:14px;
 }
-
 .countLabel{ font-size:12px; color:var(--muted); letter-spacing:1px; }
 .countNum{
   font-size:64px;
@@ -270,7 +228,7 @@ body{
   padding:14px;
 }
 .statusTitle{ font-size:12px; color:var(--muted); margin-bottom:6px; }
-.statusText{ font-size:16px; font-weight:800; }
+.statusText{ font-size:16px; font-weight:900; }
 .lastScore{
   margin-top:10px;
   padding:10px 12px;
@@ -278,7 +236,7 @@ body{
   border:1px solid #ffffff22;
   background:#00000025;
   color:#ffe8b0;
-  font-weight:900;
+  font-weight:1000;
 }
 .hidden{ display:none !important; }
 
@@ -290,7 +248,7 @@ body{
   margin-bottom:12px;
 }
 .pileTitle{ font-size:12px; color:var(--muted); margin-bottom:10px; }
-.pileArea{ display:flex; gap:10px; flex-wrap:wrap; }
+.pileArea{ display:flex; gap:12px; flex-wrap:wrap; }
 
 /* Buttons */
 .btn{
@@ -300,7 +258,7 @@ body{
   border-radius:12px;
   padding:10px 14px;
   cursor:pointer;
-  font-weight:800;
+  font-weight:900;
 }
 .btn:hover{ filter:brightness(1.06); }
 .btn.primary{
@@ -309,17 +267,16 @@ body{
 }
 .btn.ghost{ background:#00000010; }
 
-/* GO is prominent */
 .btn.go{
   background: linear-gradient(180deg, #ff7a4d 0%, var(--danger) 100%);
-  border:2px solid #00000088;
+  border-color:#00000055;
   color:#1b0b08;
   font-weight:1000;
-  padding:14px 24px;
+  padding:14px 22px;
   border-radius:14px;
   box-shadow: 0 10px 24px #00000066;
-  letter-spacing:1px;
   text-transform:uppercase;
+  letter-spacing:1px;
 }
 .btn.go:hover{ transform: translateY(-1px); }
 
@@ -346,18 +303,16 @@ body{
 }
 .handArea{
   display:flex;
-  gap:14px;
+  gap:16px;
   flex-wrap:wrap;
   padding-top:6px;
 }
 
-/* =========================
-   Cards (bigger + full color)
-   ========================= */
+/* Cards (bigger + proper color) */
 .cardBtn{
-  width:92px;
-  height:136px;
-  border-radius:14px;
+  width:96px;
+  height:144px;
+  border-radius:16px;
   border:2px solid #00000055;
   background: #f4f0e6;
   color:#111;
@@ -367,7 +322,13 @@ body{
   padding:0;
 }
 .cardBtn:hover{ transform: translateY(-2px); }
-.cardBtn:disabled{ opacity:0.95; cursor:default; }
+
+/* Keep disabled cards visible (no grayscale) */
+.cardBtn:disabled{
+  opacity:1;
+  cursor:default;
+  filter:none;
+}
 
 .cardBtn.red{ color:#b51f1f; }
 .cardBtn.black{ color:#111; }
@@ -376,7 +337,7 @@ body{
   position:absolute;
   top:10px; left:10px;
   font-weight:1000;
-  font-size:18px;
+  font-size:20px;
 }
 .cardBtn .corner.bottom{
   top:auto; left:auto;
@@ -389,7 +350,7 @@ body{
   display:flex;
   align-items:center;
   justify-content:center;
-  font-size:48px;
+  font-size:54px;
   opacity:0.95;
 }
 
@@ -410,15 +371,16 @@ body{
   grid-template-columns: repeat(3, 1fr);
   gap:14px;
 }
-@media (max-width: 1200px){
+@media (max-width: 1100px){
   .showGrid{ grid-template-columns: 1fr; }
 }
 .showCol h3{ margin:0 0 10px; }
-.cardRow{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+.cardRow{ display:flex; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
 .breakList{ margin:0; padding-left:18px; color:var(--muted); }
 .totalLine{ margin-top:10px; font-weight:1000; color:var(--gold); }
 
 /* Log */
+.logPanel{ margin-top:14px; }
 .logArea{
   margin:0;
   white-space:pre-wrap;
@@ -441,7 +403,6 @@ body{
   width:min(520px, 95vw);
   border-radius:18px;
   padding:18px;
-  box-shadow: var(--shadow);
 }
 .overlayTitle{ margin:0 0 6px; font-size:22px; }
 .overlayText{ margin:0 0 14px; color:var(--muted); }
@@ -453,6 +414,6 @@ body{
   border:1px solid #ffffff2a;
   background:#00000022;
   color:var(--text);
-  font-weight:800;
+  font-weight:900;
 }
 .overlayHint{ margin-top:12px; color:#d5c8a6; font-size:12px; opacity:0.9; }
