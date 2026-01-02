@@ -1,4 +1,37 @@
 <!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Pirate Cribbage</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <script defer src="/js/app.js"></script>
+</head>
+<body>
+
+<div id="joinOverlay">
+  <input id="nameInput" placeholder="Your name">
+  <input id="tableInput" value="JIM1">
+  <button onclick="
+    socket.emit('join_table',{
+      name: nameInput.value,
+      tableId: tableInput.value
+    });
+    this.parentElement.style.display='none';
+  ">Set Sail</button>
+</div>
+
+<div>
+  <div id="tableLine"></div>
+  <div id="meLine"></div>
+  <div id="playersLine"></div>
+  <div id="scoreLine"></div>
+  <div id="handHelp"></div>
+  <div id="handArea"></div>
+</div>
+
+</body>
+</html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
