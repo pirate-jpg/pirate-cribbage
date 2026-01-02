@@ -239,13 +239,13 @@ function resetForNewMatch(t) {
   t.matchOver = false;
   t.matchWinner = null;
 
-  // New match also resets game:
   t.scores = { PLAYER1: 0, PLAYER2: 0 };
   t.gameOver = false;
   t.gameWinner = null;
 
   t.show = null;
   t.lastPegEvent = null;
+  t.lastGoEvent = null;
 
   t.dealer = "PLAYER1";
   t.stage = "lobby";
@@ -253,9 +253,9 @@ function resetForNewMatch(t) {
 
   pushLog(t, `🧭 New match started (first to ${t.matchTarget} wins).`);
 
-  if (t.players.PLAYER1 && t.players.PLAYER2) {
-    startHand(t);
-  }
+  const bothPresent = !!t.players.PLAYER1 && (!!t.players.PLAYER2 || t.ai.enabled);
+  if (bothPresent) startHand(t);
+}
 }
 
 /** -------------------------
